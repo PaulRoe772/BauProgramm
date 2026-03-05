@@ -6,6 +6,8 @@ const CLOUD_TABLE = "app_state";
 const ROLE_ADMIN = "admin";
 const ROLE_BAULEITUNG = "bauleitung";
 const ROLE_MITARBEITER = "mitarbeiter";
+const ADMIN_ACCESS_CODE = "HSGDreieich61058";
+const BAULEITUNG_ACCESS_CODE = "Spengler1!";
 const DEFAULT_PHOTO_FOLDER_ID = "folder-default";
 const DEFAULT_PHOTO_FOLDER_NAME = "Allgemein";
 const state = {
@@ -34,6 +36,7 @@ const el = {
   registerUsername: document.getElementById("registerUsername"),
   registerPassword: document.getElementById("registerPassword"),
   registerRole: document.getElementById("registerRole"),
+  registerCodeHint: document.getElementById("registerCodeHint"),
   registerBtn: document.getElementById("registerBtn"),
   registerStatus: document.getElementById("registerStatus"),
   openBautagebuchBtn: document.getElementById("openBautagebuchBtn"),
@@ -405,6 +408,42 @@ function roleLabel(roleValue) {
   return "Bauleitung";
 }
 
+function getRoleAccessCode(roleValue) {
+  const role = normalizeUserRole(roleValue);
+  if (role === ROLE_ADMIN) return ADMIN_ACCESS_CODE;
+  if (role === ROLE_BAULEITUNG) return BAULEITUNG_ACCESS_CODE;
+  return "";
+}
+
+function isRoleCodeRequired(roleValue) {
+  return normalizeUserRole(roleValue) !== ROLE_MITARBEITER;
+}
+
+function validateRoleCode(roleValue, inputCode) {
+  const role = normalizeUserRole(roleValue);
+  if (role === ROLE_MITARBEITER) return true;
+  return String(inputCode || "") === getRoleAccessCode(role);
+}
+
+function updateRegisterCodeHint() {
+  const role = normalizeUserRole(el.registerRole?.value);
+  if (!el.registerPassword || !el.registerCodeHint) return;
+
+  if (role === ROLE_ADMIN) {
+    el.registerPassword.placeholder = "Admin-Code eingeben";
+    el.registerCodeHint.textContent = `Admin-Code erforderlich: ${ADMIN_ACCESS_CODE}`;
+    return;
+  }
+  if (role === ROLE_BAULEITUNG) {
+    el.registerPassword.placeholder = "Bauleiter-Code eingeben";
+    el.registerCodeHint.textContent = `Bauleiter-Code erforderlich: ${BAULEITUNG_ACCESS_CODE}`;
+    return;
+  }
+
+  el.registerPassword.placeholder = "Für Mitarbeiter optional";
+  el.registerCodeHint.textContent = "Mitarbeiter: frei (Code optional).";
+}
+
 function isMitarbeiterRole() {
   const user = getActiveUser();
   return normalizeUserRole(user?.role) === ROLE_MITARBEITER;
@@ -616,7 +655,7 @@ function loadAuthState() {
           password: String(item?.password || ""),
           role: normalizeUserRole(item?.role),
         }))
-        .filter((item) => item.key && item.name && item.password);
+        .filter((item) => item.key && item.name);
     }
   } catch (_) {
     users = [];
@@ -636,11 +675,20 @@ function handleLogin() {
   const key = normalizeUserKey(username);
   const user = state.auth.users.find((entry) => entry.key === key);
 
-  if (!username || !password) {
-    setFeedback(el.authStatus, "Bitte Benutzername und Passwort eingeben.", "error");
+  if (!username) {
+    setFeedback(el.authStatus, "Bitte Benutzernamen eingeben.", "error");
     return;
   }
-  if (!user || user.password !== password) {
+  if (!user) {
+    setFeedback(el.authStatus, "Benutzername nicht gefunden.", "error");
+    return;
+  }
+
+  if (isRoleCodeRequired(user.role) && !password) {
+    setFeedback(el.authStatus, "Bitte Rollen-Code eingeben.", "error");
+    return;
+  }
+  if (!validateRoleCode(user.role, password)) {
     setFeedback(el.authStatus, "Anmeldung fehlgeschlagen. Bitte Daten prüfen.", "error");
     return;
   }
@@ -655,7 +703,7 @@ function handleLogin() {
 
 function handleRegister() {
   const username = normalizeUserName(el.registerUsername.value);
-  const password = String(el.registerPassword.value || "");
+  const roleCode = String(el.registerPassword.value || "");
   const role = normalizeUserRole(el.registerRole?.value);
   const key = normalizeUserKey(username);
 
@@ -663,16 +711,16 @@ function handleRegister() {
     setFeedback(el.registerStatus, "Benutzername muss mindestens 3 Zeichen haben.", "error");
     return;
   }
-  if (password.length < 4) {
-    setFeedback(el.registerStatus, "Passwort muss mindestens 4 Zeichen haben.", "error");
-    return;
-  }
   if (state.auth.users.some((user) => user.key === key)) {
     setFeedback(el.registerStatus, "Benutzername existiert bereits.", "error");
     return;
   }
+  if (isRoleCodeRequired(role) && !validateRoleCode(role, roleCode)) {
+    setFeedback(el.registerStatus, "Rollen-Code falsch. Bitte Code prüfen.", "error");
+    return;
+  }
 
-  state.auth.users.push({ key, name: username, password, role });
+  state.auth.users.push({ key, name: username, password: roleCode, role });
   persistAuthUsers();
   state.auth.activeUserKey = key;
   persistAuthSession();
@@ -2963,6 +3011,9 @@ function bindEvents() {
       }
     });
   }
+  if (el.registerRole) {
+    el.registerRole.addEventListener("change", updateRegisterCodeHint);
+  }
 
   el.saveProjectBtn.addEventListener("click", saveProject);
   if (el.cloudWorkspaceKey) {
@@ -3210,6 +3261,7 @@ function init() {
   loadState();
   ensureProjectMediaState();
   if (el.registerRole) el.registerRole.value = ROLE_BAULEITUNG;
+  updateRegisterCodeHint();
   const savedCloudConfig = loadCloudConfig();
   applyCloudUiMode(savedCloudConfig);
   applyCloudInputs(savedCloudConfig);
