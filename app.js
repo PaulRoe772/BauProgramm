@@ -1,0 +1,2761 @@
+const STORAGE_KEY = "bautagebuch-pro-v1";
+const AUTH_USERS_KEY = "bautagebuch-pro-users-v1";
+const AUTH_SESSION_KEY = "bautagebuch-pro-session-v1";
+const CLOUD_CONFIG_KEY = "bautagebuch-pro-cloud-config-v1";
+const CLOUD_TABLE = "app_state";
+const ROLE_ADMIN = "admin";
+const ROLE_BAULEITUNG = "bauleitung";
+const ROLE_MITARBEITER = "mitarbeiter";
+const DEFAULT_PHOTO_FOLDER_ID = "folder-default";
+const DEFAULT_PHOTO_FOLDER_NAME = "Allgemein";
+const state = {
+  projects: [],
+  activeProjectId: "",
+  auth: {
+    users: [],
+    activeUserKey: "",
+  },
+};
+
+const el = {
+  authView: document.getElementById("authView"),
+  menuView: document.getElementById("menuView"),
+  bautagebuchView: document.getElementById("bautagebuchView"),
+  photoModuleView: document.getElementById("photoModuleView"),
+  sessionLabel: document.getElementById("sessionLabel"),
+  logoutBtn: document.getElementById("logoutBtn"),
+  modulesWrap: document.getElementById("modulesWrap"),
+  projectSetupStatus: document.getElementById("projectSetupStatus"),
+  loginUsername: document.getElementById("loginUsername"),
+  loginPassword: document.getElementById("loginPassword"),
+  loginBtn: document.getElementById("loginBtn"),
+  authStatus: document.getElementById("authStatus"),
+  registerUsername: document.getElementById("registerUsername"),
+  registerPassword: document.getElementById("registerPassword"),
+  registerRole: document.getElementById("registerRole"),
+  registerBtn: document.getElementById("registerBtn"),
+  registerStatus: document.getElementById("registerStatus"),
+  openBautagebuchBtn: document.getElementById("openBautagebuchBtn"),
+  openPhotoModuleBtn: document.getElementById("openPhotoModuleBtn"),
+  backToMenuBtn: document.getElementById("backToMenuBtn"),
+  backToMenuFromPhotoBtn: document.getElementById("backToMenuFromPhotoBtn"),
+  photoModuleProjectBadge: document.getElementById("photoModuleProjectBadge"),
+  projectSelect: document.getElementById("projectSelect"),
+  newProjectBtn: document.getElementById("newProjectBtn"),
+  projectName: document.getElementById("projectName"),
+  siteManager: document.getElementById("siteManager"),
+  projectNumber: document.getElementById("projectNumber"),
+  saveProjectBtn: document.getElementById("saveProjectBtn"),
+  cloudSupabaseUrl: document.getElementById("cloudSupabaseUrl"),
+  cloudSupabaseAnonKey: document.getElementById("cloudSupabaseAnonKey"),
+  cloudWorkspaceKey: document.getElementById("cloudWorkspaceKey"),
+  cloudCredentialsWrap: document.getElementById("cloudCredentialsWrap"),
+  cloudConnectBtn: document.getElementById("cloudConnectBtn"),
+  cloudLoadBtn: document.getElementById("cloudLoadBtn"),
+  cloudSyncBtn: document.getElementById("cloudSyncBtn"),
+  cloudStatus: document.getElementById("cloudStatus"),
+  newEntryBtn: document.getElementById("newEntryBtn"),
+  entryList: document.getElementById("entryList"),
+  statusBadge: document.getElementById("statusBadge"),
+  printProjectName: document.getElementById("printProjectName"),
+  printProjectNumber: document.getElementById("printProjectNumber"),
+  printSiteManager: document.getElementById("printSiteManager"),
+  printEntryDate: document.getElementById("printEntryDate"),
+  printWeather: document.getElementById("printWeather"),
+  printGeneratedAt: document.getElementById("printGeneratedAt"),
+  printReport: document.getElementById("printReport"),
+  entryDate: document.getElementById("entryDate"),
+  weather: document.getElementById("weather"),
+  workers: document.getElementById("workers"),
+  companyNameInput: document.getElementById("companyNameInput"),
+  companyCountInput: document.getElementById("companyCountInput"),
+  addCompanyWorkerBtn: document.getElementById("addCompanyWorkerBtn"),
+  companyWorkersList: document.getElementById("companyWorkersList"),
+  workDone: document.getElementById("workDone"),
+  issues: document.getElementById("issues"),
+  nextSteps: document.getElementById("nextSteps"),
+  todoInput: document.getElementById("todoInput"),
+  addTodoBtn: document.getElementById("addTodoBtn"),
+  todoList: document.getElementById("todoList"),
+  entryPhotoInput: document.getElementById("entryPhotoInput"),
+  entryCameraInput: document.getElementById("entryCameraInput"),
+  entryPhotoGrid: document.getElementById("entryPhotoGrid"),
+  photoFolderInput: document.getElementById("photoFolderInput"),
+  addPhotoFolderBtn: document.getElementById("addPhotoFolderBtn"),
+  deletePhotoFolderBtn: document.getElementById("deletePhotoFolderBtn"),
+  photoFolderSelect: document.getElementById("photoFolderSelect"),
+  photoInput: document.getElementById("photoInput"),
+  cameraInput: document.getElementById("cameraInput"),
+  photoGrid: document.getElementById("photoGrid"),
+  saveEntryBtn: document.getElementById("saveEntryBtn"),
+  printBtn: document.getElementById("printBtn"),
+  exportBtn: document.getElementById("exportBtn"),
+  deleteBtn: document.getElementById("deleteBtn"),
+  privateNotes: document.getElementById("privateNotes"),
+  signatureCanvas: document.getElementById("signatureCanvas"),
+  clearSignatureBtn: document.getElementById("clearSignatureBtn"),
+  entryItemTemplate: document.getElementById("entryItemTemplate"),
+  todoItemTemplate: document.getElementById("todoItemTemplate"),
+};
+
+const signaturePad = {
+  ctx: null,
+  drawing: false,
+  pointerId: null,
+  lastPoint: null,
+  hasInk: false,
+  renderToken: 0,
+  resizeTimer: null,
+};
+
+const cloud = {
+  client: null,
+  url: "",
+  anonKey: "",
+  workspaceKey: "",
+  connected: false,
+  lockCredentials: false,
+  autoConnect: true,
+  syncTimer: null,
+  syncing: false,
+};
+
+function setHidden(node, hidden) {
+  if (!node) return;
+  node.classList.toggle("hidden", Boolean(hidden));
+}
+
+function setFeedback(node, text = "", kind = "") {
+  if (!node) return;
+  node.textContent = text || "";
+  node.classList.remove("error", "success");
+  if (kind) node.classList.add(kind);
+}
+
+function normalizeWorkspaceKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9._-]/g, "");
+}
+
+function readCloudInputs() {
+  return {
+    url: String(el.cloudSupabaseUrl?.value || "").trim(),
+    anonKey: String(el.cloudSupabaseAnonKey?.value || "").trim(),
+    workspaceKey: normalizeWorkspaceKey(el.cloudWorkspaceKey?.value || ""),
+  };
+}
+
+function getBundledCloudConfig() {
+  const source = window.BAUTAGEBUCH_CLOUD_CONFIG || {};
+  return {
+    url: String(source.supabaseUrl || source.url || "").trim(),
+    anonKey: String(source.supabaseAnonKey || source.anonKey || "").trim(),
+    workspaceKey: normalizeWorkspaceKey(source.workspaceKey || source.projectKey || ""),
+    lockCredentials: Boolean(source.lockCredentials),
+    autoConnect: source.autoConnect !== false,
+  };
+}
+
+function applyCloudUiMode(config = {}) {
+  const hasFixedCredentials = Boolean(config.url && config.anonKey && config.workspaceKey);
+  cloud.lockCredentials = Boolean(config.lockCredentials && hasFixedCredentials);
+  cloud.autoConnect = config.autoConnect !== false;
+  setHidden(el.cloudCredentialsWrap, cloud.lockCredentials);
+}
+
+function applyCloudInputs(config) {
+  if (el.cloudSupabaseUrl) el.cloudSupabaseUrl.value = config?.url || "";
+  if (el.cloudSupabaseAnonKey) el.cloudSupabaseAnonKey.value = config?.anonKey || "";
+  if (el.cloudWorkspaceKey) el.cloudWorkspaceKey.value = config?.workspaceKey || "";
+}
+
+function loadCloudConfig() {
+  const bundled = getBundledCloudConfig();
+  try {
+    const raw = localStorage.getItem(CLOUD_CONFIG_KEY);
+    if (!raw) return bundled;
+    const parsed = JSON.parse(raw);
+    return {
+      url: String(parsed?.url || "").trim() || bundled.url,
+      anonKey: String(parsed?.anonKey || "").trim() || bundled.anonKey,
+      workspaceKey: normalizeWorkspaceKey(parsed?.workspaceKey || "") || bundled.workspaceKey,
+      lockCredentials: bundled.lockCredentials,
+      autoConnect: bundled.autoConnect,
+    };
+  } catch (_) {
+    return bundled;
+  }
+}
+
+function saveCloudConfig(config) {
+  const payload = {
+    url: String(config?.url || "").trim(),
+    anonKey: String(config?.anonKey || "").trim(),
+    workspaceKey: normalizeWorkspaceKey(config?.workspaceKey || ""),
+  };
+  localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(payload));
+}
+
+function setCloudStatus(text = "", kind = "") {
+  setFeedback(el.cloudStatus, text, kind);
+}
+
+function setCloudBusy(busy) {
+  const isBusy = Boolean(busy);
+  if (el.cloudConnectBtn) el.cloudConnectBtn.disabled = isBusy;
+  if (el.cloudLoadBtn) el.cloudLoadBtn.disabled = isBusy || !cloud.connected;
+  if (el.cloudSyncBtn) el.cloudSyncBtn.disabled = isBusy || !cloud.connected;
+}
+
+function ensureCloudClient(config) {
+  if (!window.supabase || typeof window.supabase.createClient !== "function") {
+    throw new Error("Supabase SDK wurde nicht geladen.");
+  }
+  return window.supabase.createClient(config.url, config.anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+function getCloudPayload() {
+  return {
+    schemaVersion: 2,
+    activeProjectId: state.activeProjectId,
+    projects: state.projects,
+    savedAt: new Date().toISOString(),
+  };
+}
+
+function applyCloudPayload(payload) {
+  if (!payload || !Array.isArray(payload.projects)) return false;
+  state.projects = payload.projects.map((project) => createProject(project));
+  state.activeProjectId = String(payload.activeProjectId || "");
+  ensureActiveProjectId();
+  return true;
+}
+
+function refreshUiFromState() {
+  syncProjectInputs();
+  renderEntries();
+  syncEntryInputs();
+  renderPhotoFolders();
+  renderPhotos();
+  updateModuleAccessUi();
+}
+
+async function pushCloudState() {
+  if (!cloud.connected || !cloud.client || !cloud.workspaceKey) return;
+  if (cloud.syncing) return;
+  cloud.syncing = true;
+  try {
+    const payload = getCloudPayload();
+    const { error } = await cloud.client.from(CLOUD_TABLE).upsert(
+      {
+        workspace_key: cloud.workspaceKey,
+        data: payload,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "workspace_key" }
+    );
+    if (error) throw error;
+    setCloudStatus("Cloud synchronisiert.", "success");
+  } catch (error) {
+    setCloudStatus(`Cloud-Fehler: ${error.message || "Synchronisierung fehlgeschlagen."}`, "error");
+  } finally {
+    cloud.syncing = false;
+    setCloudBusy(false);
+  }
+}
+
+function scheduleCloudSync() {
+  if (!cloud.connected) return;
+  if (cloud.syncTimer) {
+    clearTimeout(cloud.syncTimer);
+  }
+  cloud.syncTimer = setTimeout(() => {
+    cloud.syncTimer = null;
+    setCloudBusy(true);
+    void pushCloudState();
+  }, 900);
+}
+
+async function loadCloudState() {
+  if (!cloud.connected || !cloud.client || !cloud.workspaceKey) return false;
+  setCloudBusy(true);
+  try {
+    const { data, error } = await cloud.client
+      .from(CLOUD_TABLE)
+      .select("data,updated_at")
+      .eq("workspace_key", cloud.workspaceKey)
+      .maybeSingle();
+    if (error) throw error;
+
+    if (!data?.data) {
+      setCloudStatus("Noch keine Cloud-Daten gefunden. Lokale Daten werden jetzt hochgeladen.", "success");
+      await pushCloudState();
+      return false;
+    }
+
+    const applied = applyCloudPayload(data.data);
+    if (!applied) {
+      setCloudStatus("Cloud-Datenformat ungültig.", "error");
+      return false;
+    }
+    persist(true);
+    refreshUiFromState();
+    setCloudStatus("Cloud-Daten geladen.", "success");
+    return true;
+  } catch (error) {
+    setCloudStatus(`Cloud-Fehler: ${error.message || "Laden fehlgeschlagen."}`, "error");
+    return false;
+  } finally {
+    setCloudBusy(false);
+  }
+}
+
+async function connectCloud(autoLoad = true) {
+  const config = readCloudInputs();
+  if (!config.url || !config.anonKey || !config.workspaceKey) {
+    setCloudStatus("Bitte Supabase URL, Anon Key und Cloud-Projekt-Schlüssel ausfüllen.", "error");
+    return false;
+  }
+
+  // Werte direkt speichern, damit man sie nach Fehlern nicht neu eingeben muss.
+  saveCloudConfig(config);
+  setCloudBusy(true);
+  try {
+    cloud.client = ensureCloudClient(config);
+    cloud.url = config.url;
+    cloud.anonKey = config.anonKey;
+    cloud.workspaceKey = config.workspaceKey;
+    cloud.connected = true;
+    applyCloudInputs(config);
+    setCloudStatus("Cloud verbunden.", "success");
+    if (autoLoad) {
+      await loadCloudState();
+    }
+    return true;
+  } catch (error) {
+    cloud.client = null;
+    cloud.connected = false;
+    setCloudStatus(`Cloud-Verbindung fehlgeschlagen: ${error.message || "Bitte Daten prüfen."}`, "error");
+    return false;
+  } finally {
+    setCloudBusy(false);
+  }
+}
+
+async function autoConnectCloudIfConfigured() {
+  const config = loadCloudConfig();
+  applyCloudInputs(config);
+  applyCloudUiMode(config);
+  if (!config.url || !config.anonKey || !config.workspaceKey) {
+    setCloudStatus("Cloud nicht verbunden. Supabase-Daten eintragen und auf 'Cloud verbinden' klicken.");
+    setCloudBusy(false);
+    return;
+  }
+  if (!cloud.autoConnect) {
+    setCloudStatus("Cloud-Zugang hinterlegt. Auf 'Cloud verbinden' klicken.");
+    setCloudBusy(false);
+    return;
+  }
+  await connectCloud(true);
+}
+
+function normalizeUserName(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeUserKey(value) {
+  return normalizeUserName(value).toLowerCase();
+}
+
+function normalizeUserRole(value) {
+  const role = String(value || "").toLowerCase();
+  if (role === ROLE_ADMIN || role === ROLE_BAULEITUNG || role === ROLE_MITARBEITER) {
+    return role;
+  }
+  return ROLE_BAULEITUNG;
+}
+
+function roleLabel(roleValue) {
+  const role = normalizeUserRole(roleValue);
+  if (role === ROLE_ADMIN) return "Admin";
+  if (role === ROLE_MITARBEITER) return "Mitarbeiter";
+  return "Bauleitung";
+}
+
+function isMitarbeiterRole() {
+  const user = getActiveUser();
+  return normalizeUserRole(user?.role) === ROLE_MITARBEITER;
+}
+
+function applyRolePermissions() {
+  const isMitarbeiter = isMitarbeiterRole();
+  const projectInputs = [el.projectName, el.siteManager, el.projectNumber];
+  for (const input of projectInputs) {
+    if (!input) continue;
+    input.readOnly = isMitarbeiter;
+    input.classList.toggle("is-readonly", isMitarbeiter);
+  }
+  if (el.saveProjectBtn) el.saveProjectBtn.disabled = isMitarbeiter;
+  if (el.newProjectBtn) el.newProjectBtn.disabled = isMitarbeiter;
+  if (el.deleteBtn) el.deleteBtn.disabled = isMitarbeiter;
+  if (el.exportBtn) el.exportBtn.disabled = isMitarbeiter;
+}
+
+function denyForMitarbeiter(message) {
+  if (!isMitarbeiterRole()) return false;
+  alert(message);
+  return true;
+}
+
+function getActiveProject() {
+  return state.projects.find((project) => project.id === state.activeProjectId) || null;
+}
+
+function ensureActiveProjectId() {
+  if (!state.projects.length) {
+    state.activeProjectId = "";
+    return null;
+  }
+  const hasActive = state.projects.some((project) => project.id === state.activeProjectId);
+  if (!hasActive) {
+    state.activeProjectId = state.projects[0].id;
+  }
+  return getActiveProject();
+}
+
+function isProjectConfigured() {
+  const project = ensureActiveProjectId();
+  return normalizeUserName(project?.name).length > 0;
+}
+
+function updatePhotoModuleBadge() {
+  if (!el.photoModuleProjectBadge) return;
+  const project = ensureActiveProjectId();
+  const name = normalizeUserName(project?.name);
+  el.photoModuleProjectBadge.textContent = name ? `Baustelle: ${name}` : "Keine Baustelle";
+}
+
+function updateModuleAccessUi(statusText = "", statusKind = "") {
+  const ready = isProjectConfigured();
+  setHidden(el.modulesWrap, !ready);
+  if (el.openBautagebuchBtn) el.openBautagebuchBtn.disabled = !ready;
+  if (el.openPhotoModuleBtn) el.openPhotoModuleBtn.disabled = !ready;
+  updatePhotoModuleBadge();
+
+  if (!el.projectSetupStatus) return;
+  if (!ready) {
+    setFeedback(
+      el.projectSetupStatus,
+      "Bitte zuerst Baustellenname eintragen und speichern. Danach erscheinen die Module.",
+      "error"
+    );
+    return;
+  }
+  if (statusText) {
+    setFeedback(el.projectSetupStatus, statusText, statusKind || "success");
+    return;
+  }
+  const project = ensureActiveProjectId();
+  setFeedback(el.projectSetupStatus, `Aktive Baustelle: ${project?.name || "-"}`, "success");
+}
+
+function persistAuthUsers() {
+  localStorage.setItem(AUTH_USERS_KEY, JSON.stringify(state.auth.users));
+}
+
+function persistAuthSession() {
+  if (state.auth.activeUserKey) {
+    localStorage.setItem(AUTH_SESSION_KEY, state.auth.activeUserKey);
+  } else {
+    localStorage.removeItem(AUTH_SESSION_KEY);
+  }
+}
+
+function getActiveUser() {
+  return state.auth.users.find((user) => user.key === state.auth.activeUserKey) || null;
+}
+
+function updateSessionUi() {
+  const user = getActiveUser();
+  if (user) {
+    if (el.sessionLabel) {
+      el.sessionLabel.textContent = `Angemeldet: ${user.name} (${roleLabel(user.role)})`;
+    }
+    setHidden(el.sessionLabel, false);
+    setHidden(el.logoutBtn, false);
+  } else {
+    if (el.sessionLabel) el.sessionLabel.textContent = "";
+    setHidden(el.sessionLabel, true);
+    setHidden(el.logoutBtn, true);
+  }
+}
+
+function showView(name) {
+  setHidden(el.authView, name !== "auth");
+  setHidden(el.menuView, name !== "menu");
+  setHidden(el.bautagebuchView, name !== "bautagebuch");
+  setHidden(el.photoModuleView, name !== "photo-module");
+  updateSessionUi();
+  applyRolePermissions();
+}
+
+function showAuthView() {
+  showView("auth");
+}
+
+function showMenuView() {
+  if (!getActiveUser()) {
+    showAuthView();
+    return;
+  }
+  showView("menu");
+  syncProjectInputs();
+  updateModuleAccessUi();
+}
+
+function showBautagebuchView() {
+  if (!getActiveUser()) {
+    showAuthView();
+    return;
+  }
+  if (!isProjectConfigured()) {
+    showMenuView();
+    updateModuleAccessUi("Bitte zuerst eine Baustelle speichern.", "error");
+    return;
+  }
+  showView("bautagebuch");
+  syncProjectInputs();
+  renderEntries();
+  syncEntryInputs();
+  onSignatureCanvasResize();
+}
+
+function showPhotoModuleView() {
+  if (!getActiveUser()) {
+    showAuthView();
+    return;
+  }
+  if (!isProjectConfigured()) {
+    showMenuView();
+    updateModuleAccessUi("Bitte zuerst eine Baustelle speichern.", "error");
+    return;
+  }
+  showView("photo-module");
+  syncProjectInputs();
+  renderPhotoFolders();
+  renderPhotos();
+}
+
+function isBautagebuchVisible() {
+  return Boolean(el.bautagebuchView && !el.bautagebuchView.classList.contains("hidden"));
+}
+
+function isPhotoModuleVisible() {
+  return Boolean(el.photoModuleView && !el.photoModuleView.classList.contains("hidden"));
+}
+
+function loadAuthState() {
+  let users = [];
+  try {
+    const rawUsers = localStorage.getItem(AUTH_USERS_KEY);
+    const parsedUsers = rawUsers ? JSON.parse(rawUsers) : [];
+    if (Array.isArray(parsedUsers)) {
+      users = parsedUsers
+        .map((item) => ({
+          key: normalizeUserKey(item?.key || item?.name),
+          name: normalizeUserName(item?.name),
+          password: String(item?.password || ""),
+          role: normalizeUserRole(item?.role),
+        }))
+        .filter((item) => item.key && item.name && item.password);
+    }
+  } catch (_) {
+    users = [];
+  }
+
+  state.auth.users = users;
+  state.auth.activeUserKey = normalizeUserKey(localStorage.getItem(AUTH_SESSION_KEY) || "");
+  if (!state.auth.users.some((item) => item.key === state.auth.activeUserKey)) {
+    state.auth.activeUserKey = "";
+    persistAuthSession();
+  }
+}
+
+function handleLogin() {
+  const username = normalizeUserName(el.loginUsername.value);
+  const password = String(el.loginPassword.value || "");
+  const key = normalizeUserKey(username);
+  const user = state.auth.users.find((entry) => entry.key === key);
+
+  if (!username || !password) {
+    setFeedback(el.authStatus, "Bitte Benutzername und Passwort eingeben.", "error");
+    return;
+  }
+  if (!user || user.password !== password) {
+    setFeedback(el.authStatus, "Anmeldung fehlgeschlagen. Bitte Daten prüfen.", "error");
+    return;
+  }
+
+  state.auth.activeUserKey = user.key;
+  persistAuthSession();
+  setFeedback(el.authStatus, "Anmeldung erfolgreich.", "success");
+  setFeedback(el.registerStatus, "");
+  el.loginPassword.value = "";
+  showMenuView();
+}
+
+function handleRegister() {
+  const username = normalizeUserName(el.registerUsername.value);
+  const password = String(el.registerPassword.value || "");
+  const role = normalizeUserRole(el.registerRole?.value);
+  const key = normalizeUserKey(username);
+
+  if (username.length < 3) {
+    setFeedback(el.registerStatus, "Benutzername muss mindestens 3 Zeichen haben.", "error");
+    return;
+  }
+  if (password.length < 4) {
+    setFeedback(el.registerStatus, "Passwort muss mindestens 4 Zeichen haben.", "error");
+    return;
+  }
+  if (state.auth.users.some((user) => user.key === key)) {
+    setFeedback(el.registerStatus, "Benutzername existiert bereits.", "error");
+    return;
+  }
+
+  state.auth.users.push({ key, name: username, password, role });
+  persistAuthUsers();
+  state.auth.activeUserKey = key;
+  persistAuthSession();
+  setFeedback(el.registerStatus, "Konto erstellt und angemeldet.", "success");
+  setFeedback(el.authStatus, "");
+  el.registerUsername.value = "";
+  el.registerPassword.value = "";
+  if (el.registerRole) el.registerRole.value = ROLE_BAULEITUNG;
+  showMenuView();
+}
+
+function handleLogout() {
+  state.auth.activeUserKey = "";
+  persistAuthSession();
+  setFeedback(el.authStatus, "");
+  setFeedback(el.registerStatus, "");
+  showAuthView();
+}
+
+function getAutoResizeTextareas() {
+  return [el.privateNotes, el.workDone, el.issues, el.nextSteps].filter(Boolean);
+}
+
+function autoResizeTextarea(textarea) {
+  if (!textarea) return;
+  textarea.style.height = "auto";
+  textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
+function autoResizeAllTextareas() {
+  getAutoResizeTextareas().forEach(autoResizeTextarea);
+}
+
+function uid() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createDefaultPhotoFolders() {
+  return [{ id: DEFAULT_PHOTO_FOLDER_ID, name: DEFAULT_PHOTO_FOLDER_NAME }];
+}
+
+function migrateLegacyEntryPhotosToProject(project) {
+  if (!project) return;
+  const currentProjectPhotos = Array.isArray(project.photos) ? project.photos : [];
+  if (currentProjectPhotos.length) return;
+  const entries = Array.isArray(project.entries) ? project.entries : [];
+  const hasLegacyFolderData = entries.some((entry) => {
+    if (Array.isArray(entry?.photoFolders) && entry.photoFolders.length > 0) return true;
+    return Array.isArray(entry?.photos) && entry.photos.some((photo) => String(photo?.folderId || "").trim());
+  });
+  if (!hasLegacyFolderData) return;
+
+  const projectFolders = createDefaultPhotoFolders();
+  const folderNameToId = new Map([[DEFAULT_PHOTO_FOLDER_NAME.toLowerCase(), DEFAULT_PHOTO_FOLDER_ID]]);
+  const migrated = [];
+
+  for (const entry of entries) {
+    const legacyFolderMap = new Map();
+    if (Array.isArray(entry?.photoFolders)) {
+      for (const legacyFolder of entry.photoFolders) {
+        const legacyId = String(legacyFolder?.id || "").trim();
+        const legacyName = String(legacyFolder?.name || "").trim();
+        if (!legacyId || !legacyName) continue;
+
+        const key = legacyName.toLowerCase();
+        let targetFolderId = folderNameToId.get(key);
+        if (!targetFolderId) {
+          targetFolderId = uid();
+          folderNameToId.set(key, targetFolderId);
+          projectFolders.push({ id: targetFolderId, name: legacyName });
+        }
+        legacyFolderMap.set(legacyId, targetFolderId);
+      }
+    }
+
+    if (!Array.isArray(entry?.photos)) continue;
+    for (const legacyPhoto of entry.photos) {
+      const dataUrl = String(legacyPhoto?.dataUrl || "");
+      if (!dataUrl) continue;
+      const rawLegacyFolderId = String(legacyPhoto?.folderId || "").trim();
+      const folderId = legacyFolderMap.get(rawLegacyFolderId) || DEFAULT_PHOTO_FOLDER_ID;
+      migrated.push({
+        id: uid(),
+        name: String(legacyPhoto?.name || "Baufoto"),
+        dataUrl,
+        folderId,
+      });
+    }
+  }
+
+  if (!migrated.length) return;
+  project.photoFolders = projectFolders;
+  project.photos = migrated;
+}
+
+function ensureProjectMediaState(project = null) {
+  const target = project || getActiveProject();
+  if (!target) return;
+
+  const rawFolders = Array.isArray(target.photoFolders) ? target.photoFolders : [];
+  const folders = [];
+  const usedIds = new Set();
+
+  for (const folder of rawFolders) {
+    const id = String(folder?.id || "").trim();
+    const name = String(folder?.name || "").trim();
+    if (!id || !name || usedIds.has(id)) continue;
+    usedIds.add(id);
+    folders.push({ id, name });
+  }
+
+  if (!usedIds.has(DEFAULT_PHOTO_FOLDER_ID)) {
+    folders.unshift({ id: DEFAULT_PHOTO_FOLDER_ID, name: DEFAULT_PHOTO_FOLDER_NAME });
+  }
+
+  target.photoFolders = folders;
+  const validFolderIds = new Set(folders.map((folder) => folder.id));
+
+  const rawPhotos = Array.isArray(target.photos) ? target.photos : [];
+  target.photos = rawPhotos
+    .map((photo) => ({
+      id: String(photo?.id || uid()),
+      name: String(photo?.name || "Baufoto"),
+      dataUrl: String(photo?.dataUrl || ""),
+      folderId: String(photo?.folderId || DEFAULT_PHOTO_FOLDER_ID),
+    }))
+    .filter((photo) => photo.dataUrl);
+
+  for (const photo of target.photos) {
+    if (!validFolderIds.has(photo.folderId)) {
+      photo.folderId = DEFAULT_PHOTO_FOLDER_ID;
+    }
+  }
+
+  const activeFolderId = String(target.activePhotoFolderId || "");
+  target.activePhotoFolderId = validFolderIds.has(activeFolderId)
+    ? activeFolderId
+    : DEFAULT_PHOTO_FOLDER_ID;
+}
+
+function emptyEntry() {
+  return {
+    id: uid(),
+    date: new Date().toISOString().slice(0, 10),
+    weather: "",
+    workers: "",
+    companyWorkers: [],
+    workDone: "",
+    issues: "",
+    nextSteps: "",
+    privateNotes: "",
+    signatureDataUrl: "",
+    todos: [],
+    photos: [],
+    savedAt: null,
+  };
+}
+
+function normalizeEntry(source = {}) {
+  const { staffAllocation, locations, ...rest } = source || {};
+  return {
+    ...emptyEntry(),
+    ...rest,
+    id: String(source?.id || uid()),
+    todos: Array.isArray(source?.todos) ? source.todos : [],
+    photos: Array.isArray(source?.photos) ? source.photos : [],
+    companyWorkers: Array.isArray(source?.companyWorkers) ? source.companyWorkers : [],
+    weather: String(source?.weather || "").replace(/^Bewoelkt$/i, "Bewölkt"),
+    privateNotes: String(source?.privateNotes || ""),
+    signatureDataUrl: typeof source?.signatureDataUrl === "string" ? source.signatureDataUrl : "",
+  };
+}
+
+function createProject(seed = {}) {
+  const rawEntries = Array.isArray(seed.entries) ? seed.entries.map(normalizeEntry) : [];
+  const entries = rawEntries.length ? rawEntries : [emptyEntry()];
+  const project = {
+    id: String(seed.id || uid()),
+    name: String(seed.name || ""),
+    manager: String(seed.manager || ""),
+    number: String(seed.number || ""),
+    entries,
+    activeEntryId: String(seed.activeEntryId || seed.activeId || ""),
+    photoFolders: Array.isArray(seed.photoFolders) ? seed.photoFolders : [],
+    photos: Array.isArray(seed.photos) ? seed.photos : [],
+    activePhotoFolderId: String(seed.activePhotoFolderId || ""),
+  };
+  if (!project.entries.some((entry) => entry.id === project.activeEntryId)) {
+    project.activeEntryId = project.entries[0].id;
+  }
+  migrateLegacyEntryPhotosToProject(project);
+  ensureProjectMediaState(project);
+  return project;
+}
+
+function createInitialProject() {
+  const project = createProject();
+  state.projects = [project];
+  state.activeProjectId = project.id;
+}
+
+function renderProjectSelect() {
+  if (!el.projectSelect) return;
+  ensureActiveProjectId();
+  el.projectSelect.innerHTML = "";
+  for (let index = 0; index < state.projects.length; index += 1) {
+    const project = state.projects[index];
+    const option = document.createElement("option");
+    option.value = project.id;
+    const projectName = normalizeUserName(project.name);
+    option.textContent = projectName || `Unbenannte Baustelle ${index + 1}`;
+    option.selected = project.id === state.activeProjectId;
+    el.projectSelect.appendChild(option);
+  }
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      createInitialProject();
+      return;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (parsed && Array.isArray(parsed.projects)) {
+      state.projects = parsed.projects.map((project) => createProject(project));
+      if (!state.projects.length) {
+        createInitialProject();
+        return;
+      }
+      state.activeProjectId = String(parsed.activeProjectId || "");
+      ensureActiveProjectId();
+      return;
+    }
+
+    const hasLegacyShape = parsed && (parsed.project || Array.isArray(parsed.entries));
+    if (!hasLegacyShape) {
+      createInitialProject();
+      return;
+    }
+
+    const legacyProject = createProject({
+      ...parsed.project,
+      entries: Array.isArray(parsed.entries) ? parsed.entries : [],
+      activeEntryId: parsed.activeId,
+      photoFolders: Array.isArray(parsed.project?.photoFolders) ? parsed.project.photoFolders : [],
+      photos: Array.isArray(parsed.project?.photos) ? parsed.project.photos : [],
+      activePhotoFolderId: parsed.project?.activePhotoFolderId,
+    });
+    state.projects = [legacyProject];
+    state.activeProjectId = legacyProject.id;
+    ensureActiveProjectId();
+  } catch (_) {
+    createInitialProject();
+  }
+}
+
+function persist(localOnly = false) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!localOnly) scheduleCloudSync();
+}
+
+function getActiveEntry() {
+  const project = ensureActiveProjectId();
+  if (!project) return null;
+  return project.entries.find((entry) => entry.id === project.activeEntryId) || null;
+}
+
+function syncProjectInputs() {
+  const project = ensureActiveProjectId();
+  renderProjectSelect();
+  if (el.projectName) el.projectName.value = project?.name || "";
+  if (el.siteManager) el.siteManager.value = project?.manager || "";
+  if (el.projectNumber) el.projectNumber.value = project?.number || "";
+  updatePrintMeta();
+  updatePhotoModuleBadge();
+}
+
+function syncEntryInputs() {
+  const entry = getActiveEntry();
+  if (!entry) return;
+
+  el.entryDate.value = entry.date || "";
+  el.weather.value = entry.weather || "";
+  el.workers.value = entry.workers || "";
+  renderCompanyWorkers(entry);
+  el.workDone.value = entry.workDone || "";
+  el.issues.value = entry.issues || "";
+  el.nextSteps.value = entry.nextSteps || "";
+  el.privateNotes.value = entry.privateNotes || "";
+  renderSignature(entry.signatureDataUrl || "");
+  autoResizeAllTextareas();
+  renderTodos(entry);
+  renderEntryPhotos(entry);
+  updateStatus(entry.savedAt ? `Gespeichert ${fmt(entry.savedAt)}` : "Nicht gespeichert");
+  updatePrintMeta();
+}
+
+function pullInputsToActiveEntry() {
+  const entry = getActiveEntry();
+  if (!entry) return;
+
+  entry.date = el.entryDate.value;
+  entry.weather = el.weather.value;
+  entry.workers = el.workers.value;
+  entry.workDone = el.workDone.value;
+  entry.issues = el.issues.value;
+  entry.nextSteps = el.nextSteps.value;
+  entry.privateNotes = el.privateNotes.value;
+  updateStatus("Ungespeichert");
+  updatePrintMeta();
+}
+
+function renderEntries() {
+  const project = ensureActiveProjectId();
+  if (!project) {
+    el.entryList.innerHTML = "";
+    return;
+  }
+  el.entryList.innerHTML = "";
+  const sorted = [...project.entries].sort((a, b) => (a.date < b.date ? 1 : -1));
+  for (const entry of sorted) {
+    const fragment = el.entryItemTemplate.content.cloneNode(true);
+    const button = fragment.querySelector(".entry-select");
+    const stamp = entry.savedAt ? ` | ${fmt(entry.savedAt, true)}` : "";
+    button.textContent = `${entry.date || "Ohne Datum"}${stamp}`;
+    button.classList.toggle("active", entry.id === project.activeEntryId);
+    button.addEventListener("click", () => {
+      project.activeEntryId = entry.id;
+      renderEntries();
+      syncEntryInputs();
+    });
+    el.entryList.appendChild(fragment);
+  }
+}
+
+function renderTodos(entry) {
+  el.todoList.innerHTML = "";
+  for (const todo of entry.todos) {
+    const fragment = el.todoItemTemplate.content.cloneNode(true);
+    const item = fragment.querySelector(".todo-item");
+    const checkbox = fragment.querySelector("input");
+    const text = fragment.querySelector("span");
+    const removeButton = fragment.querySelector(".todo-remove");
+
+    text.textContent = todo.text;
+    checkbox.checked = !!todo.done;
+    item.classList.toggle("done", !!todo.done);
+
+    checkbox.addEventListener("change", () => {
+      todo.done = checkbox.checked;
+      item.classList.toggle("done", checkbox.checked);
+      persist();
+      updateStatus("Ungespeichert");
+    });
+
+    removeButton.addEventListener("click", () => {
+      entry.todos = entry.todos.filter((x) => x.id !== todo.id);
+      renderTodos(entry);
+      persist();
+      updateStatus("Ungespeichert");
+    });
+
+    el.todoList.appendChild(fragment);
+  }
+}
+
+function renderCompanyWorkers(entry) {
+  el.companyWorkersList.innerHTML = "";
+  for (const item of entry.companyWorkers) {
+    const li = document.createElement("li");
+    li.className = "company-workers-item";
+
+    const company = document.createElement("span");
+    company.className = "company-workers-company";
+    company.textContent = item.company;
+
+    const count = document.createElement("span");
+    count.className = "company-workers-count";
+    count.textContent = `${item.count}`;
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "company-workers-remove";
+    removeButton.textContent = "x";
+    removeButton.addEventListener("click", () => {
+      entry.companyWorkers = entry.companyWorkers.filter((x) => x.id !== item.id);
+      updateWorkersFromCompanyList(entry);
+      renderCompanyWorkers(entry);
+      persist();
+      updateStatus("Ungespeichert");
+    });
+
+    li.appendChild(company);
+    li.appendChild(count);
+    li.appendChild(removeButton);
+    el.companyWorkersList.appendChild(li);
+  }
+}
+
+function renderEntryPhotos(entry) {
+  if (!el.entryPhotoGrid) return;
+  el.entryPhotoGrid.innerHTML = "";
+
+  const photos = Array.isArray(entry?.photos) ? entry.photos : [];
+  if (!photos.length) {
+    const empty = document.createElement("p");
+    empty.className = "photo-empty";
+    empty.textContent = "Noch keine Fotos im Bericht.";
+    el.entryPhotoGrid.appendChild(empty);
+    return;
+  }
+
+  for (const photo of photos) {
+    if (!photo?.dataUrl) continue;
+    const wrapper = document.createElement("div");
+    wrapper.className = "photo";
+
+    const img = document.createElement("img");
+    img.src = photo.dataUrl;
+    img.alt = photo.name || "Baufoto";
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "x";
+    remove.addEventListener("click", () => {
+      entry.photos = entry.photos.filter((item) => item.id !== photo.id);
+      renderEntryPhotos(entry);
+      persist();
+      updateStatus("Ungespeichert");
+    });
+
+    wrapper.appendChild(img);
+    wrapper.appendChild(remove);
+    el.entryPhotoGrid.appendChild(wrapper);
+  }
+}
+
+function renderPhotos() {
+  if (!el.photoGrid) return;
+  const project = ensureActiveProjectId();
+  if (!project) {
+    el.photoGrid.innerHTML = "";
+    return;
+  }
+  ensureProjectMediaState(project);
+  el.photoGrid.innerHTML = "";
+
+  const activeFolderId = project.activePhotoFolderId || DEFAULT_PHOTO_FOLDER_ID;
+  const photos = Array.isArray(project.photos) ? project.photos : [];
+  const visiblePhotos = photos.filter((photo) => photo.folderId === activeFolderId);
+
+  if (!visiblePhotos.length) {
+    const empty = document.createElement("p");
+    empty.className = "photo-empty";
+    empty.textContent = "In diesem Ordner sind noch keine Bilder.";
+    el.photoGrid.appendChild(empty);
+    return;
+  }
+
+  for (const photo of visiblePhotos) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "photo";
+    const img = document.createElement("img");
+    img.src = photo.dataUrl;
+    img.alt = photo.name || "Baufoto";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "x";
+    remove.addEventListener("click", () => {
+      project.photos = project.photos.filter((item) => item.id !== photo.id);
+      renderPhotoFolders();
+      renderPhotos();
+      persist();
+      updateStatus("Ungespeichert");
+    });
+    wrapper.appendChild(img);
+    wrapper.appendChild(remove);
+    el.photoGrid.appendChild(wrapper);
+  }
+}
+
+function renderPhotoFolders() {
+  if (!el.photoFolderSelect || !el.deletePhotoFolderBtn) return;
+  const project = ensureActiveProjectId();
+  if (!project) {
+    el.photoFolderSelect.innerHTML = "";
+    el.deletePhotoFolderBtn.disabled = true;
+    return;
+  }
+  ensureProjectMediaState(project);
+
+  const activeFolderId = project.activePhotoFolderId || DEFAULT_PHOTO_FOLDER_ID;
+  const photos = Array.isArray(project.photos) ? project.photos : [];
+  const counts = photos.reduce((acc, photo) => {
+    const key = photo.folderId || DEFAULT_PHOTO_FOLDER_ID;
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  el.photoFolderSelect.innerHTML = "";
+  for (const folder of project.photoFolders) {
+    const option = document.createElement("option");
+    option.value = folder.id;
+    option.textContent = `${folder.name} (${counts[folder.id] || 0})`;
+    option.selected = folder.id === activeFolderId;
+    el.photoFolderSelect.appendChild(option);
+  }
+
+  el.deletePhotoFolderBtn.disabled = activeFolderId === DEFAULT_PHOTO_FOLDER_ID;
+}
+
+function addPhotoFolder(nameValue = null) {
+  const project = ensureActiveProjectId();
+  if (!project) return false;
+  ensureProjectMediaState(project);
+  const name = String(nameValue ?? el.photoFolderInput?.value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!name) return false;
+
+  const existing = project.photoFolders.find(
+    (folder) => folder.name.toLowerCase() === name.toLowerCase()
+  );
+  if (existing) {
+    project.activePhotoFolderId = existing.id;
+  } else {
+    const folder = { id: uid(), name };
+    project.photoFolders.push(folder);
+    project.activePhotoFolderId = folder.id;
+  }
+
+  if (el.photoFolderInput && nameValue == null) {
+    el.photoFolderInput.value = "";
+  }
+
+  renderPhotoFolders();
+  renderPhotos();
+  persist();
+  updateStatus("Ungespeichert");
+  return true;
+}
+
+function setActivePhotoFolder(folderId) {
+  const project = ensureActiveProjectId();
+  if (!project) return;
+  ensureProjectMediaState(project);
+  const validFolderId = project.photoFolders.some((folder) => folder.id === folderId)
+    ? folderId
+    : DEFAULT_PHOTO_FOLDER_ID;
+  project.activePhotoFolderId = validFolderId;
+  renderPhotoFolders();
+  renderPhotos();
+  persist();
+}
+
+function deleteActivePhotoFolder() {
+  const project = ensureActiveProjectId();
+  if (!project) return;
+  ensureProjectMediaState(project);
+  const folderId = project.activePhotoFolderId || DEFAULT_PHOTO_FOLDER_ID;
+  if (folderId === DEFAULT_PHOTO_FOLDER_ID) return;
+
+  const folder = project.photoFolders.find((item) => item.id === folderId);
+  const folderName = folder ? folder.name : "diesen Ordner";
+  const ok = confirm(
+    `Ordner "${folderName}" löschen? Die Bilder werden nach "${DEFAULT_PHOTO_FOLDER_NAME}" verschoben.`
+  );
+  if (!ok) return;
+
+  project.photoFolders = project.photoFolders.filter((item) => item.id !== folderId);
+  for (const photo of project.photos) {
+    if (photo.folderId === folderId) {
+      photo.folderId = DEFAULT_PHOTO_FOLDER_ID;
+    }
+  }
+  project.activePhotoFolderId = DEFAULT_PHOTO_FOLDER_ID;
+  ensureProjectMediaState(project);
+  renderPhotoFolders();
+  renderPhotos();
+  persist();
+  updateStatus("Ungespeichert");
+}
+
+function updateStatus(text) {
+  el.statusBadge.textContent = text;
+}
+
+function fmt(isoString, withTime = false) {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return "";
+  if (!withTime) return date.toLocaleString("de-DE");
+  return date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtEntryDate(dateValue) {
+  if (!dateValue) return "";
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue);
+  if (match) return `${match[3]}.${match[2]}.${match[1]}`;
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return dateValue;
+  return date.toLocaleDateString("de-DE");
+}
+
+function setText(node, value, fallback = "-") {
+  if (!node) return;
+  const content = String(value || "").trim();
+  node.textContent = content || fallback;
+}
+
+function updatePrintMeta() {
+  const entry = getActiveEntry();
+  const project = getActiveProject();
+  const projectName = el.projectName ? el.projectName.value.trim() : project?.name || "";
+  const projectNumber = el.projectNumber ? el.projectNumber.value.trim() : project?.number || "";
+  const siteManager = el.siteManager ? el.siteManager.value.trim() : project?.manager || "";
+
+  setText(el.printProjectName, projectName);
+  setText(el.printProjectNumber, projectNumber);
+  setText(el.printSiteManager, siteManager);
+  setText(el.printEntryDate, entry ? fmtEntryDate(entry.date) : "");
+  setText(el.printWeather, entry ? entry.weather : "");
+  setText(
+    el.printGeneratedAt,
+    new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })
+  );
+}
+
+function toPrintText(value, fallback = "-") {
+  const text = String(value == null ? "" : value).trim();
+  return text || fallback;
+}
+
+function createPrintMetaItem(label, value) {
+  const item = document.createElement("div");
+  item.className = "print-meta-item";
+  const labelEl = document.createElement("span");
+  labelEl.textContent = label;
+  const valueEl = document.createElement("strong");
+  valueEl.textContent = toPrintText(value);
+  item.appendChild(labelEl);
+  item.appendChild(valueEl);
+  return item;
+}
+
+function createPrintField(label, value, multiline = false) {
+  const field = document.createElement("div");
+  field.className = "print-field";
+  const title = document.createElement("h4");
+  title.textContent = label;
+  const content = document.createElement(multiline ? "div" : "p");
+  content.className = multiline ? "print-field-value print-field-value-multiline" : "print-field-value";
+  content.textContent = toPrintText(value);
+  field.appendChild(title);
+  field.appendChild(content);
+  return field;
+}
+
+function createPrintListField(label, items = []) {
+  const field = document.createElement("div");
+  field.className = "print-field";
+  const title = document.createElement("h4");
+  title.textContent = label;
+  field.appendChild(title);
+
+  if (!items.length) {
+    const empty = document.createElement("p");
+    empty.className = "print-field-value";
+    empty.textContent = "Keine Einträge";
+    field.appendChild(empty);
+    return field;
+  }
+
+  const list = document.createElement("ul");
+  list.className = "print-list";
+  for (const itemText of items) {
+    const item = document.createElement("li");
+    item.textContent = itemText;
+    list.appendChild(item);
+  }
+  field.appendChild(list);
+  return field;
+}
+
+function createPrintPage(title, subtitle = "") {
+  const page = document.createElement("section");
+  page.className = "print-page";
+  const header = document.createElement("header");
+  header.className = "print-page-header";
+  const h2 = document.createElement("h2");
+  h2.textContent = title;
+  header.appendChild(h2);
+  if (subtitle) {
+    const p = document.createElement("p");
+    p.className = "print-page-subtitle";
+    p.textContent = subtitle;
+    header.appendChild(p);
+  }
+  page.appendChild(header);
+  return page;
+}
+
+function createPrintSection(title) {
+  const section = document.createElement("section");
+  section.className = "print-block";
+  const h3 = document.createElement("h3");
+  h3.textContent = title;
+  section.appendChild(h3);
+  return section;
+}
+
+function preparePrintReport() {
+  if (!el.printReport) return;
+  const project = ensureActiveProjectId();
+  const entry = getActiveEntry();
+  el.printReport.innerHTML = "";
+  if (!project || !entry) return;
+
+  const projectName = el.projectName ? el.projectName.value.trim() : project.name || "";
+  const projectNumber = el.projectNumber ? el.projectNumber.value.trim() : project.number || "";
+  const siteManager = el.siteManager ? el.siteManager.value.trim() : project.manager || "";
+  const generatedAt = new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+  const photos = Array.isArray(entry.photos) ? entry.photos.filter((photo) => photo?.dataUrl) : [];
+
+  const fragment = document.createDocumentFragment();
+  const page = createPrintPage("Baustellentagebuch - Tagesbericht", "Formeller Baustellenbericht");
+  const meta = document.createElement("div");
+  meta.className = "print-meta-grid";
+  meta.appendChild(createPrintMetaItem("Projektname", projectName));
+  meta.appendChild(createPrintMetaItem("Projekt-Nr.", projectNumber));
+  meta.appendChild(createPrintMetaItem("Bauleitung", siteManager));
+  meta.appendChild(createPrintMetaItem("Berichtsdatum", fmtEntryDate(entry.date)));
+  meta.appendChild(createPrintMetaItem("Wetter", entry.weather));
+  meta.appendChild(createPrintMetaItem("Erstellt am", generatedAt));
+  page.appendChild(meta);
+
+  const general = createPrintSection("1. Allgemeine Angaben");
+  general.appendChild(createPrintField("Datum", fmtEntryDate(entry.date)));
+  general.appendChild(createPrintField("Wetter", entry.weather));
+  page.appendChild(general);
+
+  const personnel = createPrintSection("2. Personal");
+  personnel.appendChild(createPrintField("Mitarbeiter vor Ort", entry.workers));
+  const companyItems = Array.isArray(entry.companyWorkers)
+    ? entry.companyWorkers.map((item) => `${item.company}: ${item.count}`)
+    : [];
+  personnel.appendChild(createPrintListField("Mitarbeiter nach Unternehmen", companyItems));
+  page.appendChild(personnel);
+
+  const progress = createPrintSection("3. Leistungsstand");
+  progress.appendChild(createPrintField("Ausgeführte Arbeiten", entry.workDone, true));
+  progress.appendChild(createPrintField("Störungen / Hindernisse", entry.issues, true));
+  progress.appendChild(createPrintField("Nächste Schritte", entry.nextSteps, true));
+  page.appendChild(progress);
+
+  const todos = createPrintSection("4. Offene Punkte");
+  const todoItems = Array.isArray(entry.todos) ? entry.todos.map((item) => item.text) : [];
+  todos.appendChild(createPrintListField("Aufgabenliste", todoItems));
+  page.appendChild(todos);
+
+  const photoSection = createPrintSection("5. Fotoanhang");
+  if (!photos.length) {
+    photoSection.appendChild(createPrintField("Fotos", "Keine Fotos hinterlegt"));
+  } else {
+    const grid = document.createElement("div");
+    grid.className = "print-photo-grid";
+    for (const photo of photos) {
+      const figure = document.createElement("figure");
+      figure.className = "print-photo-item";
+      const img = document.createElement("img");
+      img.src = photo.dataUrl;
+      img.alt = photo.name || "Baufoto";
+      const caption = document.createElement("figcaption");
+      caption.textContent = toPrintText(photo.name, "Foto");
+      figure.appendChild(img);
+      figure.appendChild(caption);
+      grid.appendChild(figure);
+    }
+    photoSection.appendChild(grid);
+  }
+  page.appendChild(photoSection);
+
+  const signatureSection = createPrintSection("Unterschrift Bauleitung");
+  if (entry.signatureDataUrl) {
+    const preview = document.createElement("div");
+    preview.className = "print-signature-preview";
+    const image = document.createElement("img");
+    image.src = entry.signatureDataUrl;
+    image.alt = "Digitale Unterschrift";
+    preview.appendChild(image);
+    signatureSection.appendChild(preview);
+  } else {
+    signatureSection.appendChild(createPrintField("Digitale Unterschrift", "Keine Unterschrift erfasst"));
+  }
+  const signatureBlock = createPrintSection("6. Digitale Unterschrift");
+  signatureBlock.appendChild(signatureSection);
+
+  const lines = document.createElement("div");
+  lines.className = "print-signature-grid";
+  const lineLabels = [
+    "Ort, Datum",
+    "Unterschrift Bauleitung",
+    "Unterschrift Auftraggeber",
+    "Unterschrift Ausführende Firma",
+  ];
+  for (const label of lineLabels) {
+    const item = document.createElement("div");
+    item.className = "signature-item";
+    const p = document.createElement("p");
+    p.textContent = label;
+    const line = document.createElement("div");
+    line.className = "signature-line";
+    item.appendChild(p);
+    item.appendChild(line);
+    lines.appendChild(item);
+  }
+  signatureBlock.appendChild(lines);
+  page.appendChild(signatureBlock);
+
+  fragment.appendChild(page);
+
+  el.printReport.appendChild(fragment);
+}
+
+function switchActiveProject(projectId) {
+  const nextProjectId = String(projectId || "").trim();
+  if (!nextProjectId) return;
+  const nextProject = state.projects.find((project) => project.id === nextProjectId);
+  if (!nextProject) return;
+  if (isBautagebuchVisible()) {
+    pullInputsToActiveEntry();
+  }
+  state.activeProjectId = nextProject.id;
+  ensureProjectMediaState(nextProject);
+  syncProjectInputs();
+  renderEntries();
+  syncEntryInputs();
+  renderPhotoFolders();
+  renderPhotos();
+  updateModuleAccessUi();
+  persist();
+}
+
+function createNewProject() {
+  if (denyForMitarbeiter("Als Mitarbeiter kannst du keine neue Baustelle anlegen.")) return;
+  const project = createProject();
+  state.projects.push(project);
+  state.activeProjectId = project.id;
+  syncProjectInputs();
+  renderEntries();
+  syncEntryInputs();
+  renderPhotoFolders();
+  renderPhotos();
+  persist();
+  updateModuleAccessUi(
+    "Neue Baustelle angelegt. Bitte Stammdaten eintragen und speichern.",
+    "error"
+  );
+}
+
+function saveProject() {
+  if (denyForMitarbeiter("Als Mitarbeiter kannst du Projektstammdaten nicht ändern.")) return;
+  const project = ensureActiveProjectId();
+  if (!project) return;
+  const name = el.projectName.value.trim();
+  if (!name) {
+    updateModuleAccessUi("Bitte einen Baustellennamen eintragen.", "error");
+    return;
+  }
+
+  project.name = name;
+  project.manager = el.siteManager.value.trim();
+  project.number = el.projectNumber.value.trim();
+  ensureProjectMediaState(project);
+  renderProjectSelect();
+  updatePrintMeta();
+  persist();
+  updateModuleAccessUi(`Baustelle gespeichert: ${name}`, "success");
+}
+
+function addEntry() {
+  const project = ensureActiveProjectId();
+  if (!project) return;
+  const entry = emptyEntry();
+  project.entries.unshift(entry);
+  project.activeEntryId = entry.id;
+  persist();
+  renderEntries();
+  syncEntryInputs();
+}
+
+function saveEntry() {
+  pullInputsToActiveEntry();
+  const entry = getActiveEntry();
+  if (!entry) return;
+  entry.savedAt = new Date().toISOString();
+  persist();
+  renderEntries();
+  syncEntryInputs();
+}
+
+function deleteEntry() {
+  if (denyForMitarbeiter("Als Mitarbeiter kannst du Berichte nicht löschen.")) return;
+  const project = ensureActiveProjectId();
+  if (!project) return;
+  if (project.entries.length === 1) {
+    alert("Mindestens ein Bericht muss vorhanden sein.");
+    return;
+  }
+  const entry = getActiveEntry();
+  if (!entry) return;
+  const ok = confirm("Diesen Tagesbericht wirklich löschen?");
+  if (!ok) return;
+  project.entries = project.entries.filter((x) => x.id !== entry.id);
+  project.activeEntryId = project.entries[0].id;
+  persist();
+  renderEntries();
+  syncEntryInputs();
+}
+
+function addTodo(textValue = null) {
+  const text = (textValue || el.todoInput.value).trim();
+  if (!text) return;
+  const entry = getActiveEntry();
+  if (!entry) return;
+  entry.todos.push({
+    id: uid(),
+    text,
+    done: false,
+  });
+  if (!textValue) el.todoInput.value = "";
+  renderTodos(entry);
+  persist();
+  updateStatus("Ungespeichert");
+}
+
+function updateWorkersFromCompanyList(entry) {
+  const total = entry.companyWorkers.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  entry.workers = total > 0 ? String(total) : "";
+  el.workers.value = entry.workers;
+}
+
+function upsertCompanyWorker(entry, company, count, mode = "add") {
+  const normalized = company.toLowerCase();
+  const existing = entry.companyWorkers.find((item) => item.company.toLowerCase() === normalized);
+  if (existing) {
+    existing.count = mode === "set" ? count : existing.count + count;
+  } else {
+    entry.companyWorkers.push({
+      id: uid(),
+      company,
+      count,
+    });
+  }
+}
+
+function addCompanyWorker(companyValue = null, countValue = null) {
+  const entry = getActiveEntry();
+  if (!entry) return false;
+
+  const company = (companyValue || el.companyNameInput.value).trim();
+  const countRaw = countValue ?? el.companyCountInput.value;
+  const count = Number(countRaw);
+  if (!company || !Number.isFinite(count) || count <= 0) return false;
+
+  upsertCompanyWorker(entry, company, count, "add");
+
+  if (!companyValue) el.companyNameInput.value = "";
+  if (countValue == null) el.companyCountInput.value = "";
+
+  updateWorkersFromCompanyList(entry);
+  renderCompanyWorkers(entry);
+  persist();
+  updateStatus("Ungespeichert");
+  return true;
+}
+
+function applyCompanyWorkerMentions(entry, hits, sourceText) {
+  if (!hits.length) return { applied: false, total: 0 };
+  const replaceAll =
+    hits.length > 1 &&
+    /(davon|verteilung|aufgeteilt|verteilt|insgesamt|gesamt|zusammen)/i.test(sourceText);
+
+  if (replaceAll) {
+    entry.companyWorkers = [];
+  }
+
+  for (const hit of hits) {
+    upsertCompanyWorker(entry, hit.company, hit.count, "set");
+  }
+
+  updateWorkersFromCompanyList(entry);
+  renderCompanyWorkers(entry);
+  const total = entry.companyWorkers.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  return { applied: true, total };
+}
+
+function exportJson() {
+  if (denyForMitarbeiter("Als Mitarbeiter ist der JSON-Export nicht freigeschaltet.")) return;
+  const project = getActiveProject();
+  const filename = `${(project?.name || "bautagebuch").replace(/\s+/g, "_").toLowerCase()}.json`;
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function handlePhotos(event) {
+  const files = Array.from(event.target.files || []);
+  await appendPhotoFiles(files);
+  event.target.value = "";
+}
+
+async function handleEntryPhotos(event) {
+  const files = Array.from(event.target.files || []);
+  await appendEntryPhotoFiles(files);
+  event.target.value = "";
+}
+
+async function appendEntryPhotoFiles(files) {
+  if (!files.length) return;
+  const entry = getActiveEntry();
+  if (!entry) return;
+  if (!Array.isArray(entry.photos)) entry.photos = [];
+
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) continue;
+    const dataUrl = await toDataUrl(file);
+    entry.photos.push({
+      id: uid(),
+      name: file.name,
+      dataUrl,
+    });
+  }
+
+  renderEntryPhotos(entry);
+  persist();
+  updateStatus("Ungespeichert");
+}
+
+async function appendPhotoFiles(files) {
+  if (!files.length) return;
+  const project = ensureActiveProjectId();
+  if (!project) return;
+  ensureProjectMediaState(project);
+  const activeFolderId = project.activePhotoFolderId || DEFAULT_PHOTO_FOLDER_ID;
+
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) continue;
+    const dataUrl = await toDataUrl(file);
+    project.photos.push({
+      id: uid(),
+      name: file.name,
+      dataUrl,
+      folderId: activeFolderId,
+    });
+  }
+
+  renderPhotoFolders();
+  renderPhotos();
+  persist();
+  updateStatus("Ungespeichert");
+}
+
+function toDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function getSignatureCanvasSize(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const cssWidth = Math.max(1, Math.round(rect.width || canvas.clientWidth || 1));
+  const cssHeight = Math.max(1, Math.round(rect.height || canvas.clientHeight || 190));
+  const dpr = Math.max(window.devicePixelRatio || 1, 1);
+  return { cssWidth, cssHeight, dpr };
+}
+
+function ensureSignatureContext() {
+  const canvas = el.signatureCanvas;
+  if (!canvas) return null;
+  const { cssWidth, cssHeight, dpr } = getSignatureCanvasSize(canvas);
+  const pixelWidth = Math.round(cssWidth * dpr);
+  const pixelHeight = Math.round(cssHeight * dpr);
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#162436";
+  ctx.fillStyle = "#162436";
+  ctx.lineWidth = 2.2;
+  signaturePad.ctx = ctx;
+  return ctx;
+}
+
+function clearSignatureSurface() {
+  const canvas = el.signatureCanvas;
+  const ctx = ensureSignatureContext();
+  if (!canvas || !ctx) return;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+
+function renderSignature(dataUrl = "") {
+  const canvas = el.signatureCanvas;
+  const ctx = ensureSignatureContext();
+  if (!canvas || !ctx) return;
+
+  const token = ++signaturePad.renderToken;
+  clearSignatureSurface();
+  signaturePad.hasInk = Boolean(dataUrl);
+
+  if (!dataUrl) return;
+  const image = new Image();
+  image.onload = () => {
+    if (token !== signaturePad.renderToken) return;
+    const size = getSignatureCanvasSize(canvas);
+    clearSignatureSurface();
+    const ratio = Math.min(size.cssWidth / image.width, size.cssHeight / image.height);
+    const drawWidth = Math.max(1, image.width * ratio);
+    const drawHeight = Math.max(1, image.height * ratio);
+    const offsetX = (size.cssWidth - drawWidth) / 2;
+    const offsetY = (size.cssHeight - drawHeight) / 2;
+    ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+  };
+  image.src = dataUrl;
+}
+
+function getCanvasPointFromClient(clientX, clientY) {
+  const canvas = el.signatureCanvas;
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: clientX - rect.left,
+    y: clientY - rect.top,
+  };
+}
+
+function drawSignatureDot(x, y) {
+  const ctx = ensureSignatureContext();
+  if (!ctx) return;
+  const radius = ctx.lineWidth / 2;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function startSignatureStroke(clientX, clientY) {
+  const point = getCanvasPointFromClient(clientX, clientY);
+  signaturePad.drawing = true;
+  signaturePad.lastPoint = point;
+  signaturePad.hasInk = true;
+  drawSignatureDot(point.x, point.y);
+}
+
+function moveSignatureStroke(clientX, clientY) {
+  if (!signaturePad.drawing) return;
+  const ctx = ensureSignatureContext();
+  if (!ctx) return;
+  const point = getCanvasPointFromClient(clientX, clientY);
+  const from = signaturePad.lastPoint || point;
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(point.x, point.y);
+  ctx.stroke();
+  signaturePad.lastPoint = point;
+}
+
+function persistSignatureToEntry() {
+  const entry = getActiveEntry();
+  const canvas = el.signatureCanvas;
+  if (!entry || !canvas) return;
+  entry.signatureDataUrl = signaturePad.hasInk ? canvas.toDataURL("image/png") : "";
+  persist();
+  updateStatus("Ungespeichert");
+}
+
+function endSignatureStroke() {
+  if (!signaturePad.drawing) return;
+  signaturePad.drawing = false;
+  signaturePad.lastPoint = null;
+  persistSignatureToEntry();
+}
+
+function clearSignature() {
+  signaturePad.drawing = false;
+  signaturePad.pointerId = null;
+  signaturePad.lastPoint = null;
+  signaturePad.hasInk = false;
+  clearSignatureSurface();
+  persistSignatureToEntry();
+}
+
+function onSignatureCanvasResize() {
+  if (signaturePad.resizeTimer) {
+    window.clearTimeout(signaturePad.resizeTimer);
+  }
+  signaturePad.resizeTimer = window.setTimeout(() => {
+    const entry = getActiveEntry();
+    renderSignature(entry ? entry.signatureDataUrl : "");
+  }, 120);
+}
+
+function extractNumber(text, regex) {
+  const match = text.match(regex);
+  if (!match) return "";
+  const found = match.slice(1).find((part) => /^\d{1,3}$/.test(String(part || "").trim()));
+  if (!found) return "";
+  return String(found);
+}
+
+function extractWeather(textLower) {
+  if (/(sonnig|klar)/.test(textLower)) return "Sonnig";
+  if (/(regen|nass|schauer)/.test(textLower)) return "Regen";
+  if (/(bewoelkt|bewölkt|wolkig|bedeckt)/i.test(textLower)) return "Bewölkt";
+  if (/(schnee|frost)/.test(textLower)) return "Schnee";
+  if (/(sturm|windig|orkan)/.test(textLower)) return "Sturm";
+  return "";
+}
+
+function splitNonEmptyLines(text) {
+  return String(text || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function normalizeLineForKey(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[.,;:!?]+$/g, "")
+    .trim();
+}
+
+function ensureLinePunctuation(text) {
+  const line = String(text || "").replace(/\s+/g, " ").trim();
+  if (!line) return "";
+  return /[.!?]$/.test(line) ? line : `${line}.`;
+}
+
+function appendUniqueLines(current, lines, maxLines = 120) {
+  const existing = splitNonEmptyLines(current);
+  const keys = new Set(existing.map(normalizeLineForKey));
+  const out = [...existing];
+
+  for (const line of lines) {
+    const clean = ensureLinePunctuation(line);
+    if (!clean) continue;
+    const key = normalizeLineForKey(clean);
+    if (!key || keys.has(key)) continue;
+    keys.add(key);
+    out.push(clean);
+    if (out.length >= maxLines) break;
+  }
+
+  return out.join("\n");
+}
+
+function rewriteDictationText(text) {
+  let cleaned = text
+    .replace(/\s+/g, " ")
+    .replace(/\b(ähm+|hm+|also|halt|quasi|sozusagen)\b/gi, "")
+    .replace(/\s+,/g, ",")
+    .replace(/\s+\./g, ".")
+    .replace(/\s+:/g, ":")
+    .replace(/\s+;/g, ";")
+    .trim();
+
+  if (!cleaned) return "";
+  cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  if (!/[.!?]$/.test(cleaned)) cleaned += ".";
+
+  return cleaned
+    .split(/([.!?]\s*)/g)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
+    .replace(/\s+([.!?])/g, "$1")
+    .trim();
+}
+
+function normalizeSentenceCore(sentence) {
+  return sentence
+    .replace(/^\s*(und|dann|also|okay|ok|ja)\s+/i, "")
+    .replace(/\s+/g, " ")
+    .replace(/[.!?]+$/g, "")
+    .trim();
+}
+
+function capitalizeFirst(text) {
+  if (!text) return "";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function toFormalReportSentence(sentence, section) {
+  const coreRaw = normalizeSentenceCore(sentence);
+  if (!coreRaw) return "";
+  const core = capitalizeFirst(coreRaw);
+  if (/^(Es|Als|Die|Der|Im|Am|Auf|Für|Zur|Nach)\b/.test(core)) {
+    return ensureLinePunctuation(core);
+  }
+
+  if (section === "issues") {
+    return `Es wurde folgende Behinderung dokumentiert: ${core}.`;
+  }
+  if (section === "next") {
+    return `Als nächster Schritt ist vorgesehen: ${core}.`;
+  }
+  if (section === "allocation") {
+    return `Personaleinsatz: ${core}.`;
+  }
+  return `Es wurde dokumentiert: ${core}.`;
+}
+
+function formatFormalReportText(text, section, maxLines = 2) {
+  const summary = summarizeImportant(text, maxLines);
+  const sentences = splitSentences(summary);
+  if (!sentences.length) return "";
+
+  return sentences
+    .map((sentence) => toFormalReportSentence(sentence, section))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function normalizeSpokenNumbers(text) {
+  const replacements = [
+    [/\bnull\b/gi, "0"],
+    [/\bein(?:e|en|er|em|es)?\b/gi, "1"],
+    [/\beins\b/gi, "1"],
+    [/\bzwei\b/gi, "2"],
+    [/\bdrei\b/gi, "3"],
+    [/\bvier\b/gi, "4"],
+    [/\bfünf\b/gi, "5"],
+    [/\bfuenf\b/gi, "5"],
+    [/\bsechs\b/gi, "6"],
+    [/\bsieben\b/gi, "7"],
+    [/\bacht\b/gi, "8"],
+    [/\bneun\b/gi, "9"],
+    [/\bzehn\b/gi, "10"],
+    [/\belf\b/gi, "11"],
+    [/\bzwölf\b/gi, "12"],
+    [/\bzwoelf\b/gi, "12"],
+    [/\bdreizehn\b/gi, "13"],
+    [/\bvierzehn\b/gi, "14"],
+    [/\bfünfzehn\b/gi, "15"],
+    [/\bfuenfzehn\b/gi, "15"],
+    [/\bsechzehn\b/gi, "16"],
+    [/\bsiebzehn\b/gi, "17"],
+    [/\bachtzehn\b/gi, "18"],
+    [/\bneunzehn\b/gi, "19"],
+    [/\bzwanzig\b/gi, "20"],
+  ];
+
+  let normalized = text;
+  for (const [pattern, digit] of replacements) {
+    normalized = normalized.replace(pattern, digit);
+  }
+  return normalized;
+}
+
+function splitSentences(text) {
+  return text
+    .split(/[.!?]\s+|[.!?]$/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function scoreSentence(sentence) {
+  let score = 0;
+  if (/\d/.test(sentence)) score += 2;
+  if (/(problem|stoer|stör|hinder|verzug|fehlt|mangel|warten)/i.test(sentence)) score += 3;
+  if (/(heute|montage|beton|installation|lieferung|abnahme|pruefung)/i.test(sentence)) score += 2;
+  if (/(morgen|naechste|nächste|anschliessend|anschließend|danach|als naechstes|als nächstes|planen)/i.test(sentence)) score += 2;
+  return score;
+}
+
+function summarizeImportant(text, maxLines = 3) {
+  const sentences = splitSentences(text);
+  if (!sentences.length) return text;
+
+  const ranked = sentences
+    .map((sentence, index) => ({ sentence, index, score: scoreSentence(sentence) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, maxLines)
+    .sort((a, b) => a.index - b.index)
+    .map((item) => item.sentence);
+
+  if (!ranked.length) {
+    return sentences.slice(0, maxLines).join(". ") + ".";
+  }
+  return ranked.join(". ") + ".";
+}
+
+function extractRelevantSummary(text, signalRegex) {
+  const sentences = splitSentences(text).filter((sentence) => signalRegex.test(sentence));
+  if (!sentences.length) return "";
+  return summarizeImportant(sentences.join(". "), 2);
+}
+
+function normalizeTextList(values, maxItems = 12, mapValue = null) {
+  if (!Array.isArray(values)) return [];
+  const cleaned = values
+    .map((item) => String(item || "").replace(/\s+/g, " ").trim())
+    .map((item) => (typeof mapValue === "function" ? mapValue(item) : item))
+    .filter(Boolean);
+  const unique = [];
+  const seen = new Set();
+  for (const item of cleaned) {
+    const key = normalizeLineForKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(item);
+    if (unique.length >= maxItems) break;
+  }
+  return unique;
+}
+
+function normalizeLocationLabel(value) {
+  let normalized = String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/\bwhg\b/gi, "Wohnung")
+    .replace(/\bobergeschoss\b/gi, "OG")
+    .replace(/\berdgeschoss\b/gi, "EG")
+    .replace(/\bkellergeschoss\b/gi, "KG")
+    .replace(/\buntergeschoss\b/gi, "UG")
+    .trim();
+
+  normalized = normalized
+    .replace(/\b(\d{1,2})\s*\.?\s*og\b/gi, "$1. OG")
+    .replace(/\b(\d{1,2})\s*\.?\s*ug\b/gi, "$1. UG")
+    .replace(/\bog\s*(\d{1,2})\b/gi, "$1. OG")
+    .replace(/\bug\s*(\d{1,2})\b/gi, "$1. UG")
+    .replace(/\bwohnung\s*(\d{1,3})\b/gi, "Wohnung $1")
+    .replace(/\btreppenhaus\s*([a-z0-9]+)\b/gi, (_, token) => `Treppenhaus ${String(token).toUpperCase()}`)
+    .replace(/\bachse\s*([a-z]\d{0,2})\b/gi, (_, token) => `Achse ${String(token).toUpperCase()}`)
+    .replace(/\bbereich\s+([a-z0-9][a-z0-9\- ]{0,24})\b/gi, (_, token) => {
+      const clean = String(token).replace(/\s+/g, " ").trim();
+      return clean ? `Bereich ${capitalizeFirst(clean.toLowerCase())}` : "";
+    })
+    .replace(/[;]+/g, ",")
+    .replace(/\s+,/g, ",")
+    .replace(/,+/g, ",")
+    .trim();
+
+  if (!normalized) return "";
+  return capitalizeFirst(normalized);
+}
+
+function normalizeLocationList(values, maxItems = 16) {
+  return normalizeTextList(values, maxItems, normalizeLocationLabel);
+}
+
+function normalizeStaffAllocationLine(value) {
+  let line = String(value || "").replace(/\s+/g, " ").trim();
+  if (!line) return "";
+  line = line
+    .replace(/\bmitarbeiter\b/gi, "MA")
+    .replace(/\bpersonen\b/gi, "MA")
+    .replace(/\s+-\s+/g, " - ")
+    .replace(/\s+:\s+/g, ": ")
+    .trim();
+  return ensureLinePunctuation(line);
+}
+
+function extractLocationMentionsHeuristic(text) {
+  const hits = [];
+  const patterns = [
+    /\b\d{1,2}\s*\.?\s*(?:og|obergeschoss)\s*(?:wohnung|whg|einheit)\s*\d{1,3}\b/gi,
+    /\b(?:eg|kg|ug|erdgeschoss|keller|dachgeschoss)\s*(?:wohnung|whg|einheit)\s*\d{1,3}\b/gi,
+    /\b\d{1,2}\.\s*(?:og|obergeschoss)\b/gi,
+    /\b(?:eg|erdgeschoss|kg|keller|dachgeschoss)\b/gi,
+    /\bwohnung\s*\d{1,3}\b/gi,
+    /\braum\s*\d{1,3}\b/gi,
+    /\btreppenhaus\s*[a-z0-9]+\b/gi,
+    /\bachse\s*[a-z0-9]+\b/gi,
+    /\bbereich\s*[a-z0-9][a-z0-9\- ]{0,24}\b/gi,
+    /\b(?:block|haus)\s*[a-z0-9]+\b/gi,
+  ];
+
+  for (const pattern of patterns) {
+    const matches = text.match(pattern);
+    if (matches?.length) {
+      hits.push(...matches);
+    }
+  }
+  return normalizeLocationList(hits, 16);
+}
+
+function mergeLocationLines(currentText, incomingLocations) {
+  const existing = normalizeLocationList(String(currentText || "").split(/\n+/), 30);
+  const incoming = normalizeLocationList(incomingLocations, 30);
+  const merged = normalizeLocationList([...existing, ...incoming], 30);
+  return merged.join("\n");
+}
+
+function mergeStaffAllocationLines(currentText, incomingLines) {
+  const existing = normalizeTextList(
+    String(currentText || "").split(/\n+/),
+    60,
+    normalizeStaffAllocationLine
+  );
+  const incoming = normalizeTextList(incomingLines, 60, normalizeStaffAllocationLine);
+  return appendUniqueLines(existing.join("\n"), incoming, 60);
+}
+
+function extractStaffAllocationHeuristic(text) {
+  const hits = [];
+  const patterns = [
+    /(?:firma|fa\.)?\s*([A-Za-z0-9ÄÖÜäöüß&.\- ]{2,50}?)\s*(?:mit|hat|stellt|:)?\s*(\d{1,3})\s*(?:mitarbeiter|arbeiter|personen|mann|leute|ma)?\s*(?:im|in|auf|an)\s*([^,.;\n]+?)(?=,|;|\.|\bund\b|$)/gi,
+    /(\d{1,3})\s*(?:mitarbeiter|arbeiter|personen|mann|leute|ma)\s*(?:von|bei)\s*(?:firma|fa\.)?\s*([A-Za-z0-9ÄÖÜäöüß&.\- ]{2,50}?)\s*(?:im|in|auf|an)\s*([^,.;\n]+?)(?=,|;|\.|\bund\b|$)/gi,
+  ];
+
+  for (const pattern of patterns) {
+    let match = pattern.exec(text);
+    while (match) {
+      const company = sanitizeCompanyName(pattern === patterns[0] ? match[1] : match[2]);
+      const count = Number(pattern === patterns[0] ? match[2] : match[1]);
+      const location = normalizeLocationLabel(match[3] || "");
+      if (company && Number.isFinite(count) && count > 0 && location) {
+        hits.push(`${company}: ${count} MA in ${location}`);
+      }
+      match = pattern.exec(text);
+    }
+  }
+
+  return normalizeTextList(hits, 20, normalizeStaffAllocationLine);
+}
+
+function addTodosToEntry(entry, todoLines) {
+  const normalized = normalizeTextList(todoLines, 30);
+  if (!normalized.length) return 0;
+  const existing = new Set(entry.todos.map((todo) => todo.text.toLowerCase()));
+  let added = 0;
+  for (const text of normalized) {
+    const key = text.toLowerCase();
+    if (existing.has(key)) continue;
+    existing.add(key);
+    entry.todos.push({
+      id: uid(),
+      text,
+      done: false,
+    });
+    added += 1;
+  }
+  return added;
+}
+
+function parseSpeechToEntryFallback(text) {
+  const entry = getActiveEntry();
+  if (!entry) return { summary: "Kein aktiver Bericht." };
+
+  const polishedText = rewriteDictationText(text);
+  const normalizedForParsing = normalizeSpokenNumbers(polishedText);
+  const lower = normalizedForParsing.toLowerCase();
+  const condensedText = summarizeImportant(polishedText, 3);
+  const updates = [];
+
+  const weather = extractWeather(lower);
+  if (weather) {
+    entry.weather = weather;
+    updates.push(`Wetter: ${weather}`);
+  }
+
+  const companyHits = extractCompanyWorkerMentions(normalizedForParsing);
+  if (companyHits.length) {
+    const companyApply = applyCompanyWorkerMentions(entry, companyHits, normalizedForParsing);
+    updates.push(
+      `Firmen: ${companyHits.map((hit) => `${hit.company} (${hit.count})`).join(", ")} | Gesamt: ${companyApply.total}`
+    );
+  } else {
+    const workers = extractNumber(
+      lower,
+      /(?:insgesamt|gesamt|gesamtzahl|summe|waren)\s*(\d{1,3})\s*(mitarbeiter|arbeiter|kollegen|personen|mann|leute)\b|(\d{1,3})\s*(mitarbeiter|arbeiter|kollegen|personen|mann|leute)\b/i
+    );
+    if (workers) {
+      entry.workers = workers;
+      updates.push(`Mitarbeiter: ${workers}`);
+    }
+  }
+
+  const locationHits = extractLocationMentionsHeuristic(normalizedForParsing);
+  if (locationHits.length) {
+    entry.locations = mergeLocationLines(entry.locations, locationHits);
+    updates.push(`Orte: ${locationHits.join(", ")}`);
+  }
+
+  const allocationHits = extractStaffAllocationHeuristic(normalizedForParsing);
+  if (allocationHits.length) {
+    const formalAllocation = allocationHits.map((line) => toFormalReportSentence(line, "allocation"));
+    entry.staffAllocation = mergeStaffAllocationLines(entry.staffAllocation, formalAllocation);
+    updates.push("Verteilung übernommen");
+  } else if (companyHits.length && locationHits.length) {
+    const synthesized = companyHits.map((item) => `${item.company}: ${item.count} MA in ${locationHits[0]}`);
+    const formalSynthesized = synthesized.map((line) => toFormalReportSentence(line, "allocation"));
+    entry.staffAllocation = mergeStaffAllocationLines(entry.staffAllocation, formalSynthesized);
+    updates.push("Verteilung abgeleitet");
+  }
+
+  const issueSignal = /(problem|stoer|stör|hinder|verzug|fehlt|warten)/i;
+  const nextSignal = /(morgen|naechste|nächste|als naechstes|als nächstes|weiter geht|planen)/i;
+  const issueSummary = extractRelevantSummary(
+    polishedText,
+    /(problem|stoer|stör|hinder|verzug|fehlt|mangel|warten)/i
+  );
+  const nextSummary = extractRelevantSummary(
+    polishedText,
+    /(morgen|naechste|nächste|als naechstes|als nächstes|weiter geht|planen|anschliessend|anschließend|danach)/i
+  );
+
+  if (issueSignal.test(lower)) {
+    entry.issues = appendUniqueLines(
+      entry.issues,
+      splitNonEmptyLines(formatFormalReportText(issueSummary || condensedText, "issues", 2)),
+      120
+    );
+    updates.push("Störungen erweitert");
+  }
+  if (nextSignal.test(lower)) {
+    entry.nextSteps = appendUniqueLines(
+      entry.nextSteps,
+      splitNonEmptyLines(formatFormalReportText(nextSummary || condensedText, "next", 2)),
+      120
+    );
+    updates.push("Nächste Schritte erweitert");
+  }
+  if (!issueSignal.test(lower) && !nextSignal.test(lower)) {
+    entry.workDone = appendUniqueLines(
+      entry.workDone,
+      splitNonEmptyLines(formatFormalReportText(condensedText, "work", 3)),
+      140
+    );
+    updates.push("Ausgeführte Arbeiten erweitert");
+  } else {
+    const remainingSummary = summarizeImportant(
+      splitSentences(polishedText)
+        .filter((line) => !/(problem|stoer|stör|hinder|verzug|fehlt|mangel|warten)/i.test(line))
+        .filter(
+          (line) =>
+            !/(morgen|naechste|nächste|als naechstes|als nächstes|weiter geht|planen|anschliessend|anschließend|danach)/i.test(
+              line
+            )
+        )
+        .join(". "),
+      2
+    );
+    if (remainingSummary && remainingSummary !== ".") {
+      entry.workDone = appendUniqueLines(
+        entry.workDone,
+        splitNonEmptyLines(formatFormalReportText(remainingSummary, "work", 2)),
+        140
+      );
+      updates.push("Kernaussagen in Arbeiten notiert");
+    }
+  }
+
+  const todoCandidates = polishedText
+    .split(/[.!?;\n]/)
+    .map((line) => line.trim())
+    .filter((line) => /(offen|todo|muss noch|bitte|noch zu tun|nachreichen)/i.test(line));
+  for (const todoLine of todoCandidates) {
+    addTodo(todoLine.replace(/^(todo|offen)[:\s-]*/i, ""));
+  }
+
+  syncEntryInputs();
+  persist();
+  updateStatus("Ungespeichert");
+  return {
+    summary: updates.length
+      ? `Freisprechen verarbeitet: formeller Baustellenbericht-Stil aktiv (${updates.join(", ")}).`
+      : "Text gespeichert. Falls etwas fehlt: Stichworte wie 'Mitarbeiter' oder 'Problem' sagen.",
+  };
+}
+
+function extractCompanyWorkerMentions(text) {
+  const likelyDistribution =
+    /(firma|fa\.|verteilung|davon|von|bei|mitarbeiter|arbeiter|kollegen|personen|mann|leute|team)/i.test(
+      text
+    ) ||
+    /[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß&.\- ]{1,30}\s+\d{1,3}\s*(?:,|;|\bund\b)/i.test(text);
+  if (!likelyDistribution) return [];
+
+  const hits = [];
+  function pushHit(companyRaw, countRaw) {
+    const company = sanitizeCompanyName(companyRaw);
+    const count = Number(countRaw);
+    if (company && Number.isFinite(count) && count > 0) {
+      hits.push({ company, count });
+    }
+  }
+
+  const regexA =
+    /(?:firma|fa\.)?\s*([A-Za-z0-9ÄÖÜäöüß&.\- ]{2,50}?)\s+(\d{1,3})\s*(mitarbeiter|arbeiter|personen|mann|leute)\b/gi;
+  const regexB =
+    /(\d{1,3})\s*(mitarbeiter|arbeiter|personen|mann|leute)\s*(?:von|bei)\s*(?:firma|fa\.)?\s*([A-Za-z0-9ÄÖÜäöüß&.\- ]{2,50})/gi;
+  const regexC =
+    /(\d{1,3})\s*(?:von|bei)\s*(?:firma|fa\.)?\s*([A-Za-z0-9ÄÖÜäöüß&.\- ]{2,50})(?=,|;|\.|\bund\b|$)/gi;
+  const regexD =
+    /(?:firma|fa\.)?\s*([A-Za-z0-9ÄÖÜäöüß&.\- ]{2,50}?)\s*[:\-]\s*(\d{1,3})(?=,|;|\.|\bund\b|$)/gi;
+  const regexE =
+    /(?:firma|fa\.)?\s*([A-Za-z0-9ÄÖÜäöüß&.\- ]{2,50}?)\s*(?:mit|hat|stellt)\s*(\d{1,3})\s*(?:mitarbeiter|arbeiter|personen|mann|leute)?(?=,|;|\.|\bund\b|$)/gi;
+  const regexF =
+    /(?:firma|fa\.)?\s*([A-Za-z0-9ÄÖÜäöüß&.\- ]{2,50}?)\s+(\d{1,3})(?=,|;|\.|\bund\b|$)/gi;
+
+  let match = regexA.exec(text);
+  while (match) {
+    pushHit(match[1], match[2]);
+    match = regexA.exec(text);
+  }
+
+  match = regexB.exec(text);
+  while (match) {
+    pushHit(match[3], match[1]);
+    match = regexB.exec(text);
+  }
+
+  match = regexC.exec(text);
+  while (match) {
+    pushHit(match[2], match[1]);
+    match = regexC.exec(text);
+  }
+
+  match = regexD.exec(text);
+  while (match) {
+    pushHit(match[1], match[2]);
+    match = regexD.exec(text);
+  }
+
+  match = regexE.exec(text);
+  while (match) {
+    pushHit(match[1], match[2]);
+    match = regexE.exec(text);
+  }
+
+  match = regexF.exec(text);
+  while (match) {
+    pushHit(match[1], match[2]);
+    match = regexF.exec(text);
+  }
+
+  const deduped = new Map();
+  for (const hit of hits) {
+    const key = hit.company.toLowerCase();
+    if (deduped.has(key)) {
+      deduped.get(key).count = Math.max(deduped.get(key).count, hit.count);
+    } else {
+      deduped.set(key, { ...hit });
+    }
+  }
+  return Array.from(deduped.values());
+}
+
+function sanitizeCompanyName(value) {
+  const stopWords = new Set([
+    "heute",
+    "waren",
+    "sind",
+    "ist",
+    "mit",
+    "und",
+    "auf",
+    "davon",
+    "gesamt",
+    "insgesamt",
+    "team",
+    "mitarbeiter",
+    "arbeiter",
+    "kollegen",
+    "personen",
+    "leute",
+    "mann",
+    "im",
+    "in",
+    "an",
+    "am",
+  ]);
+
+  let cleaned = value.replace(/\s+/g, " ").trim();
+  cleaned = cleaned
+    .replace(/^(?:firma|fa\.|von|bei|davon)\s+/i, "")
+    .replace(
+      /\s+(?:im|in|an|auf)\s+(?:\d{1,2}\.?\s*(?:og|ug)|eg|kg|wohnung|whg|treppenhaus|bereich|achse|raum|haus|block)\b.*$/i,
+      ""
+    )
+    .replace(/\s+(?:mitarbeiter|arbeiter|personen|mann|leute)$/i, "")
+    .replace(/\s+\d{1,3}$/i, "")
+    .replace(/[,:;.\-]+$/g, "")
+    .trim();
+
+  if (!cleaned) return "";
+  if (stopWords.has(cleaned.toLowerCase())) return "";
+  if (cleaned.length < 2) return "";
+  return cleaned;
+}
+
+async function importClipboardImage(event) {
+  if (!isBautagebuchVisible() && !isPhotoModuleVisible()) return;
+  if (!event.clipboardData?.items?.length) return;
+  const imageFiles = [];
+  for (const item of event.clipboardData.items) {
+    if (item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      if (file) imageFiles.push(file);
+    }
+  }
+  if (imageFiles.length) {
+    if (isPhotoModuleVisible()) {
+      await appendPhotoFiles(imageFiles);
+    } else {
+      await appendEntryPhotoFiles(imageFiles);
+    }
+  }
+}
+
+async function handlePhotoModuleDrop(event) {
+  event.preventDefault();
+  const files = Array.from(event.dataTransfer?.files || []);
+  await appendPhotoFiles(files);
+}
+
+async function handleEntryPhotoDrop(event) {
+  event.preventDefault();
+  const files = Array.from(event.dataTransfer?.files || []);
+  await appendEntryPhotoFiles(files);
+}
+
+function bindEvents() {
+  if (el.loginBtn) el.loginBtn.addEventListener("click", handleLogin);
+  if (el.registerBtn) el.registerBtn.addEventListener("click", handleRegister);
+  if (el.logoutBtn) el.logoutBtn.addEventListener("click", handleLogout);
+  if (el.openBautagebuchBtn) el.openBautagebuchBtn.addEventListener("click", showBautagebuchView);
+  if (el.openPhotoModuleBtn) el.openPhotoModuleBtn.addEventListener("click", showPhotoModuleView);
+  if (el.backToMenuBtn) el.backToMenuBtn.addEventListener("click", showMenuView);
+  if (el.backToMenuFromPhotoBtn) {
+    el.backToMenuFromPhotoBtn.addEventListener("click", showMenuView);
+  }
+
+  if (el.loginUsername) {
+    el.loginUsername.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleLogin();
+      }
+    });
+  }
+  if (el.loginPassword) {
+    el.loginPassword.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleLogin();
+      }
+    });
+  }
+  if (el.registerUsername) {
+    el.registerUsername.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleRegister();
+      }
+    });
+  }
+  if (el.registerPassword) {
+    el.registerPassword.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleRegister();
+      }
+    });
+  }
+
+  el.saveProjectBtn.addEventListener("click", saveProject);
+  if (el.cloudWorkspaceKey) {
+    el.cloudWorkspaceKey.addEventListener("change", () => {
+      el.cloudWorkspaceKey.value = normalizeWorkspaceKey(el.cloudWorkspaceKey.value);
+    });
+  }
+  if (el.cloudConnectBtn) {
+    el.cloudConnectBtn.addEventListener("click", async () => {
+      await connectCloud(true);
+    });
+  }
+  if (el.cloudLoadBtn) {
+    el.cloudLoadBtn.addEventListener("click", async () => {
+      await loadCloudState();
+    });
+  }
+  if (el.cloudSyncBtn) {
+    el.cloudSyncBtn.addEventListener("click", async () => {
+      if (!cloud.connected) {
+        const ok = await connectCloud(false);
+        if (!ok) return;
+      }
+      setCloudBusy(true);
+      await pushCloudState();
+      setCloudBusy(false);
+    });
+  }
+  if (el.projectSelect) {
+    el.projectSelect.addEventListener("change", () => {
+      switchActiveProject(el.projectSelect.value);
+    });
+  }
+  if (el.newProjectBtn) {
+    el.newProjectBtn.addEventListener("click", createNewProject);
+  }
+  [el.projectName, el.siteManager, el.projectNumber].forEach((input) => {
+    input.addEventListener("input", updatePrintMeta);
+    input.addEventListener("change", updatePrintMeta);
+  });
+  el.newEntryBtn.addEventListener("click", addEntry);
+  el.saveEntryBtn.addEventListener("click", saveEntry);
+  el.deleteBtn.addEventListener("click", deleteEntry);
+  el.addTodoBtn.addEventListener("click", () => addTodo());
+  el.addCompanyWorkerBtn.addEventListener("click", () => addCompanyWorker());
+  el.companyNameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addCompanyWorker();
+    }
+  });
+  el.companyCountInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addCompanyWorker();
+    }
+  });
+  el.todoInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addTodo();
+    }
+  });
+
+  if (el.entryPhotoInput) el.entryPhotoInput.addEventListener("change", handleEntryPhotos);
+  if (el.entryCameraInput) el.entryCameraInput.addEventListener("change", handleEntryPhotos);
+  if (el.photoInput) el.photoInput.addEventListener("change", handlePhotos);
+  if (el.cameraInput) el.cameraInput.addEventListener("change", handlePhotos);
+  if (el.addPhotoFolderBtn) {
+    el.addPhotoFolderBtn.addEventListener("click", () => addPhotoFolder());
+  }
+  if (el.photoFolderInput) {
+    el.photoFolderInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addPhotoFolder();
+      }
+    });
+  }
+  if (el.photoFolderSelect) {
+    el.photoFolderSelect.addEventListener("change", () => {
+      setActivePhotoFolder(el.photoFolderSelect.value);
+    });
+  }
+  if (el.deletePhotoFolderBtn) {
+    el.deletePhotoFolderBtn.addEventListener("click", deleteActivePhotoFolder);
+  }
+  el.exportBtn.addEventListener("click", exportJson);
+  el.printBtn.addEventListener("click", () => {
+    pullInputsToActiveEntry();
+    updatePrintMeta();
+    preparePrintReport();
+    window.print();
+  });
+  if (el.clearSignatureBtn) {
+    el.clearSignatureBtn.addEventListener("click", clearSignature);
+  }
+
+  document.addEventListener("paste", importClipboardImage);
+  if (el.entryPhotoGrid) {
+    el.entryPhotoGrid.addEventListener("dragover", (event) => event.preventDefault());
+    el.entryPhotoGrid.addEventListener("drop", handleEntryPhotoDrop);
+  }
+  if (el.photoGrid) {
+    el.photoGrid.addEventListener("dragover", (event) => event.preventDefault());
+    el.photoGrid.addEventListener("drop", handlePhotoModuleDrop);
+  }
+  window.addEventListener("beforeprint", () => {
+    pullInputsToActiveEntry();
+    updatePrintMeta();
+    preparePrintReport();
+  });
+  window.addEventListener("resize", onSignatureCanvasResize);
+
+  if (el.signatureCanvas) {
+    const canvas = el.signatureCanvas;
+    if (window.PointerEvent) {
+      canvas.addEventListener("pointerdown", (event) => {
+        if (event.button != null && event.button !== 0) return;
+        event.preventDefault();
+        signaturePad.pointerId = event.pointerId;
+        if (canvas.setPointerCapture) canvas.setPointerCapture(event.pointerId);
+        startSignatureStroke(event.clientX, event.clientY);
+      });
+
+      canvas.addEventListener("pointermove", (event) => {
+        if (!signaturePad.drawing) return;
+        if (signaturePad.pointerId != null && event.pointerId !== signaturePad.pointerId) return;
+        event.preventDefault();
+        moveSignatureStroke(event.clientX, event.clientY);
+      });
+
+      const endPointer = (event) => {
+        if (signaturePad.pointerId != null && event.pointerId !== signaturePad.pointerId) return;
+        if (canvas.releasePointerCapture) {
+          try {
+            canvas.releasePointerCapture(event.pointerId);
+          } catch (_) {
+            // Ignore when pointer capture is already released.
+          }
+        }
+        signaturePad.pointerId = null;
+        endSignatureStroke();
+      };
+
+      canvas.addEventListener("pointerup", endPointer);
+      canvas.addEventListener("pointercancel", endPointer);
+    } else {
+      canvas.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        startSignatureStroke(event.clientX, event.clientY);
+      });
+      canvas.addEventListener("mousemove", (event) => {
+        if (!signaturePad.drawing) return;
+        event.preventDefault();
+        moveSignatureStroke(event.clientX, event.clientY);
+      });
+      window.addEventListener("mouseup", () => {
+        endSignatureStroke();
+      });
+
+      canvas.addEventListener(
+        "touchstart",
+        (event) => {
+          const touch = event.changedTouches && event.changedTouches[0];
+          if (!touch) return;
+          event.preventDefault();
+          startSignatureStroke(touch.clientX, touch.clientY);
+        },
+        { passive: false }
+      );
+      canvas.addEventListener(
+        "touchmove",
+        (event) => {
+          const touch = event.changedTouches && event.changedTouches[0];
+          if (!touch) return;
+          event.preventDefault();
+          moveSignatureStroke(touch.clientX, touch.clientY);
+        },
+        { passive: false }
+      );
+      canvas.addEventListener(
+        "touchend",
+        (event) => {
+          event.preventDefault();
+          endSignatureStroke();
+        },
+        { passive: false }
+      );
+      canvas.addEventListener(
+        "touchcancel",
+        (event) => {
+          event.preventDefault();
+          endSignatureStroke();
+        },
+        { passive: false }
+      );
+    }
+  }
+
+  const entryInputs = [
+    el.entryDate,
+    el.weather,
+    el.workers,
+    el.workDone,
+    el.issues,
+    el.nextSteps,
+    el.privateNotes,
+  ];
+  for (const input of entryInputs) {
+    input.addEventListener("input", pullInputsToActiveEntry);
+    input.addEventListener("change", pullInputsToActiveEntry);
+  }
+
+  getAutoResizeTextareas().forEach((textarea) => {
+    textarea.addEventListener("input", () => autoResizeTextarea(textarea));
+    textarea.addEventListener("change", () => autoResizeTextarea(textarea));
+  });
+}
+
+function init() {
+  loadAuthState();
+  loadState();
+  ensureProjectMediaState();
+  if (el.registerRole) el.registerRole.value = ROLE_BAULEITUNG;
+  const savedCloudConfig = loadCloudConfig();
+  applyCloudUiMode(savedCloudConfig);
+  applyCloudInputs(savedCloudConfig);
+  bindEvents();
+  syncProjectInputs();
+  renderEntries();
+  syncEntryInputs();
+  renderPhotoFolders();
+  renderPhotos();
+  setCloudBusy(false);
+  onSignatureCanvasResize();
+  autoResizeAllTextareas();
+  void autoConnectCloudIfConfigured();
+  if (getActiveUser()) {
+    showMenuView();
+  } else {
+    showAuthView();
+  }
+}
+
+init();

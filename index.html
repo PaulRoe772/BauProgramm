@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bautagebuch Pro</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Source+Sans+3:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-bg"></div>
+    <div class="app-shell">
+      <header class="global-header">
+        <div>
+          <p class="eyebrow">Baudokumentation Suite</p>
+          <h1>Projektplattform Bau</h1>
+          <p class="subtle">Module zentral verwalten, Berichte formal dokumentieren.</p>
+        </div>
+        <div class="global-actions">
+          <span id="sessionLabel" class="session-label hidden"></span>
+          <button id="logoutBtn" class="btn btn-ghost hidden" type="button">Abmelden</button>
+        </div>
+      </header>
+
+      <section id="authView" class="view auth-view">
+        <div class="auth-grid">
+          <article class="card auth-card">
+            <h2>Anmeldung</h2>
+            <p class="subtle mini">Mit bestehendem Konto anmelden.</p>
+            <label for="loginUsername">Benutzername</label>
+            <input id="loginUsername" type="text" autocomplete="username" placeholder="z. B. bauleitung.muster" />
+            <label for="loginPassword">Passwort</label>
+            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Passwort" />
+            <button id="loginBtn" class="btn btn-primary" type="button">Anmelden</button>
+            <p id="authStatus" class="auth-feedback" aria-live="polite"></p>
+          </article>
+
+          <article class="card auth-card">
+            <h2>Neues Konto</h2>
+            <p class="subtle mini">Einfaches lokales Konto auf diesem Gerät erstellen.</p>
+            <label for="registerUsername">Benutzername</label>
+            <input
+              id="registerUsername"
+              type="text"
+              autocomplete="username"
+              placeholder="mindestens 3 Zeichen"
+            />
+            <label for="registerPassword">Passwort</label>
+            <input
+              id="registerPassword"
+              type="password"
+              autocomplete="new-password"
+              placeholder="mindestens 4 Zeichen"
+            />
+            <label for="registerRole">Rolle</label>
+            <select id="registerRole" aria-label="Benutzerrolle wählen">
+              <option value="bauleitung">Bauleitung</option>
+              <option value="admin">Admin</option>
+              <option value="mitarbeiter">Mitarbeiter</option>
+            </select>
+            <button id="registerBtn" class="btn btn-ghost" type="button">Konto erstellen</button>
+            <p id="registerStatus" class="auth-feedback" aria-live="polite"></p>
+          </article>
+        </div>
+      </section>
+
+      <section id="menuView" class="view hidden">
+        <div class="menu-wrap">
+          <article class="card menu-hero">
+            <p class="eyebrow">Hauptmenü</p>
+            <h2>Module</h2>
+            <p class="subtle">Lege zuerst eine Baustelle an. Danach werden die Module freigeschaltet.</p>
+          </article>
+
+          <article class="card project-setup-card">
+            <p class="section-marker">1. Baustelle anlegen / wechseln</p>
+            <label for="projectSelect">Baustelle auswählen</label>
+            <div class="project-switch-row">
+              <select id="projectSelect" aria-label="Baustelle auswählen"></select>
+              <button id="newProjectBtn" class="btn btn-ghost" type="button">Neue Baustelle</button>
+            </div>
+            <p class="subtle mini">Zwischen Baustellen umschalten und Stammdaten separat pflegen.</p>
+
+            <p class="section-marker">2. Stammdaten der aktiven Baustelle</p>
+            <label for="projectName">Baustellenname</label>
+            <input id="projectName" type="text" placeholder="z. B. Neubau Kita Sonnenfeld" />
+
+            <div class="grid-two">
+              <div>
+                <label for="siteManager">Bauleitung</label>
+                <input id="siteManager" type="text" placeholder="Name" />
+              </div>
+              <div>
+                <label for="projectNumber">Projekt-Nr.</label>
+                <input id="projectNumber" type="text" placeholder="2026-031" />
+              </div>
+            </div>
+
+            <div class="project-setup-actions">
+              <button id="saveProjectBtn" class="btn btn-primary" type="button">Baustelle speichern</button>
+              <p id="projectSetupStatus" class="project-setup-status subtle mini"></p>
+            </div>
+
+            <p class="section-marker">3. Online-Speicher (Supabase)</p>
+            <div id="cloudCredentialsWrap">
+              <label for="cloudSupabaseUrl">Supabase URL</label>
+              <input id="cloudSupabaseUrl" type="url" placeholder="https://xxxx.supabase.co" />
+              <label for="cloudSupabaseAnonKey">Supabase Anon Key</label>
+              <input id="cloudSupabaseAnonKey" type="password" placeholder="eyJ..." />
+              <label for="cloudWorkspaceKey">Cloud-Projekt-Schlüssel</label>
+              <input
+                id="cloudWorkspaceKey"
+                type="text"
+                placeholder="z. B. bau-team-nord-2026"
+                autocomplete="off"
+              />
+              <div class="project-setup-actions cloud-actions">
+                <button id="cloudConnectBtn" class="btn btn-ghost" type="button">Cloud verbinden</button>
+              </div>
+            </div>
+            <div class="project-setup-actions cloud-actions">
+              <button id="cloudLoadBtn" class="btn btn-ghost" type="button">Cloud laden</button>
+              <button id="cloudSyncBtn" class="btn btn-primary" type="button">Jetzt synchronisieren</button>
+            </div>
+            <p id="cloudStatus" class="project-setup-status subtle mini"></p>
+          </article>
+
+          <div id="modulesWrap" class="menu-grid hidden">
+            <article class="card module-card module-card-primary">
+              <p class="module-tag">Aktiv</p>
+              <h3>Bautagebuch Pro</h3>
+              <p>Formeller Tagesbericht mit Fotoanhang, Aufgaben, Mitarbeiterlisten und digitaler Unterschrift.</p>
+              <button id="openBautagebuchBtn" class="btn btn-primary" type="button">Bereich öffnen</button>
+            </article>
+
+            <article class="card module-card">
+              <p class="module-tag">Aktiv</p>
+              <h3>Fotoordner</h3>
+              <p>Ordner je Bereich/Wohnung anlegen und Bilder zentral zur Baustelle speichern.</p>
+              <button id="openPhotoModuleBtn" class="btn btn-primary" type="button">Bereich öffnen</button>
+            </article>
+
+            <article class="card module-card">
+              <p class="module-tag">Demnächst</p>
+              <h3>Terminplanung</h3>
+              <p>Wochenplanung, Meilensteine und Aufgabenverteilung für Teams.</p>
+              <button class="btn btn-ghost" type="button" disabled>In Vorbereitung</button>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="bautagebuchView" class="view hidden">
+        <div class="module-toolbar">
+          <button id="backToMenuBtn" class="btn btn-ghost" type="button">Zurück zum Hauptmenü</button>
+          <p class="subtle mini">Aktiver Bereich: Bautagebuch Pro</p>
+        </div>
+
+        <main class="layout">
+          <section class="panel panel-left">
+            <header class="brand">
+              <p class="eyebrow">Offizielles Bautagebuch</p>
+              <h1>Bautagebuch Pro</h1>
+              <p class="subtle">Formale Tagesdokumentation für Bauprojekte.</p>
+            </header>
+
+            <div class="card">
+              <div class="row-between">
+                <h2>Tagesberichte</h2>
+                <button id="newEntryBtn" class="btn btn-ghost">+ Neu</button>
+              </div>
+              <ul id="entryList" class="entry-list"></ul>
+            </div>
+          </section>
+
+          <section class="panel panel-right">
+            <div class="card report-card">
+              <div class="report-watermark">BTB-01</div>
+              <div class="row-between doc-head">
+                <div>
+                  <p class="document-kicker">Dokumenttyp: Tagesbericht Baustelle</p>
+                  <h2>Tagesbericht</h2>
+                  <p class="document-subtle">Nachweis der Tätigkeiten, Vorkommnisse und Folgemaßnahmen.</p>
+                </div>
+                <span id="statusBadge" class="badge">Nicht gespeichert</span>
+              </div>
+
+              <div class="print-meta-grid">
+                <div class="print-meta-item">
+                  <span>Projektname</span>
+                  <strong id="printProjectName">-</strong>
+                </div>
+                <div class="print-meta-item">
+                  <span>Projekt-Nr.</span>
+                  <strong id="printProjectNumber">-</strong>
+                </div>
+                <div class="print-meta-item">
+                  <span>Bauleitung</span>
+                  <strong id="printSiteManager">-</strong>
+                </div>
+                <div class="print-meta-item">
+                  <span>Berichtsdatum</span>
+                  <strong id="printEntryDate">-</strong>
+                </div>
+                <div class="print-meta-item">
+                  <span>Wetter</span>
+                  <strong id="printWeather">-</strong>
+                </div>
+                <div class="print-meta-item">
+                  <span>Erstellt am</span>
+                  <strong id="printGeneratedAt">-</strong>
+                </div>
+              </div>
+
+              <section class="report-section report-section-general">
+                <p class="section-marker">1. Allgemeine Angaben</p>
+                <div class="grid-two">
+                  <div>
+                    <label for="entryDate">Datum</label>
+                    <input id="entryDate" type="date" />
+                  </div>
+                  <div>
+                    <label for="weather">Wetter</label>
+                    <select id="weather">
+                      <option value="">Bitte wählen</option>
+                      <option>Sonnig</option>
+                      <option>Bewölkt</option>
+                      <option>Regen</option>
+                      <option>Schnee</option>
+                      <option>Sturm</option>
+                    </select>
+                  </div>
+                </div>
+              </section>
+
+              <section class="report-section report-section-personnel">
+                <p class="section-marker">2. Personal</p>
+                <div class="grid-two">
+                  <div>
+                    <label for="workers">Mitarbeiter vor Ort</label>
+                    <input id="workers" type="number" min="0" placeholder="12" />
+                  </div>
+                </div>
+
+                <label>Mitarbeiter nach Unternehmen</label>
+                <div class="company-workers-add">
+                  <input id="companyNameInput" type="text" placeholder="Unternehmen (z. B. Elektro Weber GmbH)" />
+                  <input id="companyCountInput" type="number" min="1" placeholder="Anzahl" />
+                  <button id="addCompanyWorkerBtn" class="btn btn-ghost" type="button">Hinzufügen</button>
+                </div>
+                <ul id="companyWorkersList" class="company-workers-list"></ul>
+              </section>
+
+              <section class="report-section report-section-progress">
+                <p class="section-marker">3. Leistungsstand</p>
+                <label for="workDone">Ausgeführte Arbeiten</label>
+                <textarea id="workDone" rows="4" placeholder="Was wurde heute erledigt?"></textarea>
+
+                <label for="issues">Störungen / Hindernisse</label>
+                <textarea id="issues" rows="3" placeholder="Lieferverzug, Wetter, Abstimmungen ..."></textarea>
+
+                <label for="nextSteps">Nächste Schritte</label>
+                <textarea id="nextSteps" rows="3" placeholder="Was passiert morgen/nächste Woche?"></textarea>
+              </section>
+
+              <section class="report-section report-section-todos">
+                <p class="section-marker">4. Offene Punkte</p>
+                <label for="todoInput">Offene Punkte</label>
+                <div class="todo-add">
+                  <input id="todoInput" type="text" placeholder="z. B. Materialfreigabe EG" />
+                  <button id="addTodoBtn" class="btn btn-ghost">Hinzufügen</button>
+                </div>
+                <ul id="todoList" class="todo-list"></ul>
+              </section>
+
+              <section class="report-section report-section-photos">
+                <p class="section-marker">5. Fotoanhang</p>
+                <label for="entryPhotoInput">Fotos (werden lokal im Bericht gespeichert)</label>
+                <input id="entryPhotoInput" type="file" accept="image/*" multiple />
+                <div class="mobile-photo-actions">
+                  <input id="entryCameraInput" type="file" accept="image/*" capture="environment" multiple />
+                  <label for="entryCameraInput" class="btn btn-ghost">Kamera (Handy)</label>
+                  <span class="subtle mini">Auf dem Handy öffnet das direkt die Kamera.</span>
+                </div>
+                <div id="entryPhotoGrid" class="photo-grid"></div>
+              </section>
+
+              <section class="report-section report-section-signature">
+                <p class="section-marker">6. Digitale Unterschrift</p>
+                <label for="signatureCanvas">Unterschrift (Finger/Stift auf dem Handy)</label>
+                <div class="signature-pad">
+                  <canvas id="signatureCanvas" class="signature-canvas" height="190"></canvas>
+                  <div class="signature-pad-actions">
+                    <button id="clearSignatureBtn" class="btn btn-ghost" type="button">Unterschrift löschen</button>
+                    <span class="subtle mini">Die Unterschrift wird pro Tagesbericht gespeichert.</span>
+                  </div>
+                </div>
+
+                <div class="print-signature-grid print-only">
+                  <div class="signature-item">
+                    <p>Ort, Datum</p>
+                    <div class="signature-line"></div>
+                  </div>
+                  <div class="signature-item">
+                    <p>Unterschrift Bauleitung</p>
+                    <div class="signature-line"></div>
+                  </div>
+                  <div class="signature-item">
+                    <p>Unterschrift Auftraggeber</p>
+                    <div class="signature-line"></div>
+                  </div>
+                  <div class="signature-item">
+                    <p>Unterschrift Ausführende Firma</p>
+                    <div class="signature-line"></div>
+                  </div>
+                </div>
+              </section>
+
+              <p class="section-marker actions-marker">7. Aktionen</p>
+              <div class="actions">
+                <button id="saveEntryBtn" class="btn btn-primary">Bericht speichern</button>
+                <button id="printBtn" class="btn btn-ghost">Drucken / PDF</button>
+                <button id="exportBtn" class="btn btn-ghost">JSON exportieren</button>
+                <button id="deleteBtn" class="btn btn-danger">Löschen</button>
+              </div>
+            </div>
+
+            <article id="printReport" class="card print-report print-only"></article>
+
+            <div class="card notes-card">
+              <h2>Interne Notizen</h2>
+              <p class="subtle mini">Wird nicht in der PDF und nicht im Druck ausgegeben.</p>
+              <textarea
+                id="privateNotes"
+                class="notes-textarea"
+                rows="6"
+                placeholder="Interne Hinweise, Telefonate, Erinnerungen ..."
+              ></textarea>
+            </div>
+          </section>
+        </main>
+      </section>
+
+      <section id="photoModuleView" class="view hidden">
+        <div class="module-toolbar">
+          <button id="backToMenuFromPhotoBtn" class="btn btn-ghost" type="button">Zurück zum Hauptmenü</button>
+          <p class="subtle mini">Aktiver Bereich: Fotoordner</p>
+        </div>
+
+        <div class="menu-wrap">
+          <article class="card report-card photo-module-card">
+            <div class="row-between doc-head">
+              <div>
+                <p class="document-kicker">Modul: Baustellen-Fotoordner</p>
+                <h2>Fotoordner</h2>
+                <p class="document-subtle">Ordner je Bereich erstellen und Fotos zentral zur Baustelle ablegen.</p>
+              </div>
+              <span id="photoModuleProjectBadge" class="badge">-</span>
+            </div>
+
+            <label for="photoFolderSelect">Foto-Ordner / Bereich</label>
+            <div class="photo-folder-controls">
+              <select id="photoFolderSelect" aria-label="Foto-Ordner auswählen"></select>
+              <input
+                id="photoFolderInput"
+                type="text"
+                placeholder="z. B. 2. OG Wohnung 4"
+                aria-label="Neuen Foto-Ordner anlegen"
+              />
+              <button id="addPhotoFolderBtn" class="btn btn-ghost" type="button">Ordner anlegen</button>
+              <button id="deletePhotoFolderBtn" class="btn btn-danger" type="button">Ordner löschen</button>
+            </div>
+            <p class="subtle mini">Fotos werden immer im aktuell ausgewählten Ordner gespeichert.</p>
+
+            <label for="photoInput">Fotos (werden lokal gespeichert)</label>
+            <input id="photoInput" type="file" accept="image/*" multiple />
+            <div class="mobile-photo-actions">
+              <input id="cameraInput" type="file" accept="image/*" capture="environment" multiple />
+              <label for="cameraInput" class="btn btn-ghost">Kamera (Handy)</label>
+              <span class="subtle mini">Auf dem Handy öffnet das direkt die Kamera.</span>
+            </div>
+            <div id="photoGrid" class="photo-grid"></div>
+          </article>
+        </div>
+      </section>
+
+    </div>
+
+    <template id="entryItemTemplate">
+      <li class="entry-item">
+        <button class="entry-select" type="button"></button>
+      </li>
+    </template>
+
+    <template id="todoItemTemplate">
+      <li class="todo-item">
+        <label>
+          <input type="checkbox" />
+          <span></span>
+        </label>
+        <button class="todo-remove" type="button">x</button>
+      </li>
+    </template>
+
+    <script src="./cloud-config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
