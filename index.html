@@ -146,6 +146,13 @@
             </article>
 
             <article class="card module-card">
+              <p class="module-tag">Aktiv</p>
+              <h3>Arbeitszeiten</h3>
+              <p>Mitarbeiterzeiten von-bis erfassen, Tagesstunden sehen und Einträge verwalten.</p>
+              <button id="openWorkTimesBtn" class="btn btn-primary" type="button">Bereich öffnen</button>
+            </article>
+
+            <article class="card module-card">
               <p class="module-tag">Demnächst</p>
               <h3>Terminplanung</h3>
               <p>Wochenplanung, Meilensteine und Aufgabenverteilung für Teams.</p>
@@ -385,6 +392,86 @@
               <span class="subtle mini">Auf dem Handy öffnet das direkt die Kamera.</span>
             </div>
             <div id="photoGrid" class="photo-grid"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="workTimesView" class="view hidden">
+        <div class="module-toolbar">
+          <button id="backToMenuFromTimesBtn" class="btn btn-ghost" type="button">Zurück zum Hauptmenü</button>
+          <p class="subtle mini">Aktiver Bereich: Arbeitszeiten</p>
+        </div>
+
+        <div class="menu-wrap">
+          <article class="card report-card worktimes-card">
+            <div class="row-between doc-head">
+              <div>
+                <p class="document-kicker">Modul: Mitarbeiter-Arbeitszeiten</p>
+                <h2>Arbeitszeiten</h2>
+                <p class="document-subtle">Zeiterfassung pro Mitarbeiter und Tag (Von/Bis).</p>
+              </div>
+              <span id="workTimesProjectBadge" class="badge">-</span>
+            </div>
+
+            <div class="grid-three">
+              <div>
+                <label for="workTimeDate">Datum</label>
+                <input id="workTimeDate" type="date" />
+              </div>
+              <div>
+                <label for="workTimeStart">Von</label>
+                <input id="workTimeStart" type="time" value="08:00" />
+              </div>
+              <div>
+                <label for="workTimeEnd">Bis</label>
+                <input id="workTimeEnd" type="time" value="16:00" />
+              </div>
+            </div>
+
+            <div class="grid-two">
+              <div>
+                <label for="workTimeName">Mitarbeiter</label>
+                <input id="workTimeName" type="text" placeholder="z. B. Max Mustermann" />
+              </div>
+              <div>
+                <label for="workTimeCompany">Unternehmen</label>
+                <input id="workTimeCompany" type="text" placeholder="z. B. Elektro Weber GmbH" />
+              </div>
+            </div>
+
+            <div class="grid-three worktimes-input-grid">
+              <div>
+                <label for="workTimeBreak">Pause (Min.)</label>
+                <input id="workTimeBreak" type="number" min="0" step="5" value="0" />
+              </div>
+              <div class="worktimes-input-action">
+                <button id="addWorkTimeBtn" class="btn btn-primary" type="button">Eintrag hinzufügen</button>
+              </div>
+            </div>
+
+            <p id="workTimeStatus" class="project-setup-status subtle mini"></p>
+
+            <div class="worktimes-summary">
+              <span id="workTimesDaySummary">Gesamtstunden: 0,0 h</span>
+              <span id="workTimesEntryCount">0 Einträge</span>
+            </div>
+
+            <div class="worktimes-table-wrap">
+              <table class="worktimes-table">
+                <thead>
+                  <tr>
+                    <th>Mitarbeiter</th>
+                    <th>Unternehmen</th>
+                    <th>Von</th>
+                    <th>Bis</th>
+                    <th>Pause</th>
+                    <th>Stunden</th>
+                    <th>Aktion</th>
+                  </tr>
+                </thead>
+                <tbody id="workTimesTableBody"></tbody>
+              </table>
+            </div>
           </article>
         </div>
       </section>

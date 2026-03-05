@@ -22,6 +22,7 @@ const el = {
   menuView: document.getElementById("menuView"),
   bautagebuchView: document.getElementById("bautagebuchView"),
   photoModuleView: document.getElementById("photoModuleView"),
+  workTimesView: document.getElementById("workTimesView"),
   sessionLabel: document.getElementById("sessionLabel"),
   logoutBtn: document.getElementById("logoutBtn"),
   modulesWrap: document.getElementById("modulesWrap"),
@@ -37,9 +38,12 @@ const el = {
   registerStatus: document.getElementById("registerStatus"),
   openBautagebuchBtn: document.getElementById("openBautagebuchBtn"),
   openPhotoModuleBtn: document.getElementById("openPhotoModuleBtn"),
+  openWorkTimesBtn: document.getElementById("openWorkTimesBtn"),
   backToMenuBtn: document.getElementById("backToMenuBtn"),
   backToMenuFromPhotoBtn: document.getElementById("backToMenuFromPhotoBtn"),
+  backToMenuFromTimesBtn: document.getElementById("backToMenuFromTimesBtn"),
   photoModuleProjectBadge: document.getElementById("photoModuleProjectBadge"),
+  workTimesProjectBadge: document.getElementById("workTimesProjectBadge"),
   projectSelect: document.getElementById("projectSelect"),
   newProjectBtn: document.getElementById("newProjectBtn"),
   projectName: document.getElementById("projectName"),
@@ -87,6 +91,17 @@ const el = {
   photoInput: document.getElementById("photoInput"),
   cameraInput: document.getElementById("cameraInput"),
   photoGrid: document.getElementById("photoGrid"),
+  workTimeDate: document.getElementById("workTimeDate"),
+  workTimeStart: document.getElementById("workTimeStart"),
+  workTimeEnd: document.getElementById("workTimeEnd"),
+  workTimeName: document.getElementById("workTimeName"),
+  workTimeCompany: document.getElementById("workTimeCompany"),
+  workTimeBreak: document.getElementById("workTimeBreak"),
+  addWorkTimeBtn: document.getElementById("addWorkTimeBtn"),
+  workTimeStatus: document.getElementById("workTimeStatus"),
+  workTimesDaySummary: document.getElementById("workTimesDaySummary"),
+  workTimesEntryCount: document.getElementById("workTimesEntryCount"),
+  workTimesTableBody: document.getElementById("workTimesTableBody"),
   saveEntryBtn: document.getElementById("saveEntryBtn"),
   printBtn: document.getElementById("printBtn"),
   exportBtn: document.getElementById("exportBtn"),
@@ -242,6 +257,8 @@ function refreshUiFromState() {
   syncEntryInputs();
   renderPhotoFolders();
   renderPhotos();
+  syncWorkTimeInputs();
+  renderWorkTimes();
   updateModuleAccessUi();
 }
 
@@ -440,12 +457,21 @@ function updatePhotoModuleBadge() {
   el.photoModuleProjectBadge.textContent = name ? `Baustelle: ${name}` : "Keine Baustelle";
 }
 
+function updateWorkTimesBadge() {
+  if (!el.workTimesProjectBadge) return;
+  const project = ensureActiveProjectId();
+  const name = normalizeUserName(project?.name);
+  el.workTimesProjectBadge.textContent = name ? `Baustelle: ${name}` : "Keine Baustelle";
+}
+
 function updateModuleAccessUi(statusText = "", statusKind = "") {
   const ready = isProjectConfigured();
   setHidden(el.modulesWrap, !ready);
   if (el.openBautagebuchBtn) el.openBautagebuchBtn.disabled = !ready;
   if (el.openPhotoModuleBtn) el.openPhotoModuleBtn.disabled = !ready;
+  if (el.openWorkTimesBtn) el.openWorkTimesBtn.disabled = !ready;
   updatePhotoModuleBadge();
+  updateWorkTimesBadge();
 
   if (!el.projectSetupStatus) return;
   if (!ready) {
@@ -500,6 +526,7 @@ function showView(name) {
   setHidden(el.menuView, name !== "menu");
   setHidden(el.bautagebuchView, name !== "bautagebuch");
   setHidden(el.photoModuleView, name !== "photo-module");
+  setHidden(el.workTimesView, name !== "work-times");
   updateSessionUi();
   applyRolePermissions();
 }
@@ -549,6 +576,22 @@ function showPhotoModuleView() {
   syncProjectInputs();
   renderPhotoFolders();
   renderPhotos();
+}
+
+function showWorkTimesView() {
+  if (!getActiveUser()) {
+    showAuthView();
+    return;
+  }
+  if (!isProjectConfigured()) {
+    showMenuView();
+    updateModuleAccessUi("Bitte zuerst eine Baustelle speichern.", "error");
+    return;
+  }
+  showView("work-times");
+  syncProjectInputs();
+  syncWorkTimeInputs();
+  renderWorkTimes();
 }
 
 function isBautagebuchVisible() {
@@ -802,9 +845,65 @@ function normalizeEntry(source = {}) {
   };
 }
 
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function parseTimeToMinutes(timeValue) {
+  const value = String(timeValue || "").trim();
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function normalizeBreakMinutes(value) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes < 0) return 0;
+  return Math.round(minutes);
+}
+
+function getShiftDurationMinutes(startTime, endTime, breakMinutes = 0) {
+  const startMinutes = parseTimeToMinutes(startTime);
+  const endMinutes = parseTimeToMinutes(endTime);
+  if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) return null;
+  const gross = endMinutes - startMinutes;
+  const pause = Math.min(Math.max(0, normalizeBreakMinutes(breakMinutes)), gross);
+  const net = gross - pause;
+  return net > 0 ? net : null;
+}
+
+function normalizeWorkShift(source = {}) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(source?.date || ""))
+    ? String(source.date)
+    : todayIsoDate();
+  const start = /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(source?.start || ""))
+    ? String(source.start)
+    : "08:00";
+  const end = /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(source?.end || ""))
+    ? String(source.end)
+    : "16:00";
+  const breakMinutes = normalizeBreakMinutes(source?.breakMinutes ?? source?.break ?? 0);
+  const duration = getShiftDurationMinutes(start, end, breakMinutes);
+  if (duration == null) return null;
+
+  return {
+    id: String(source?.id || uid()),
+    date,
+    start,
+    end,
+    employee: normalizeUserName(source?.employee || source?.name || ""),
+    company: normalizeUserName(source?.company || ""),
+    breakMinutes,
+    createdAt: String(source?.createdAt || new Date().toISOString()),
+  };
+}
+
 function createProject(seed = {}) {
   const rawEntries = Array.isArray(seed.entries) ? seed.entries.map(normalizeEntry) : [];
   const entries = rawEntries.length ? rawEntries : [emptyEntry()];
+  const workShifts = Array.isArray(seed.workShifts)
+    ? seed.workShifts.map((item) => normalizeWorkShift(item)).filter(Boolean)
+    : [];
   const project = {
     id: String(seed.id || uid()),
     name: String(seed.name || ""),
@@ -815,6 +914,7 @@ function createProject(seed = {}) {
     photoFolders: Array.isArray(seed.photoFolders) ? seed.photoFolders : [],
     photos: Array.isArray(seed.photos) ? seed.photos : [],
     activePhotoFolderId: String(seed.activePhotoFolderId || ""),
+    workShifts,
   };
   if (!project.entries.some((entry) => entry.id === project.activeEntryId)) {
     project.activeEntryId = project.entries[0].id;
@@ -906,6 +1006,7 @@ function syncProjectInputs() {
   if (el.projectNumber) el.projectNumber.value = project?.number || "";
   updatePrintMeta();
   updatePhotoModuleBadge();
+  updateWorkTimesBadge();
 }
 
 function syncEntryInputs() {
@@ -1214,6 +1315,209 @@ function deleteActivePhotoFolder() {
   updateStatus("Ungespeichert");
 }
 
+function setWorkTimeStatus(text = "", kind = "") {
+  setFeedback(el.workTimeStatus, text, kind);
+}
+
+function ensureProjectWorkShifts(project = null) {
+  const target = project || ensureActiveProjectId();
+  if (!target) return [];
+  const raw = Array.isArray(target.workShifts) ? target.workShifts : [];
+  target.workShifts = raw.map((item) => normalizeWorkShift(item)).filter(Boolean);
+  return target.workShifts;
+}
+
+function getSelectedWorkTimeDate() {
+  const value = String(el.workTimeDate?.value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const entry = getActiveEntry();
+  return entry?.date || todayIsoDate();
+}
+
+function syncWorkTimeInputs() {
+  if (!el.workTimeDate) return;
+  const project = ensureActiveProjectId();
+  if (!project) return;
+  ensureProjectWorkShifts(project);
+
+  const entry = getActiveEntry();
+  const defaultDate = entry?.date || todayIsoDate();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(el.workTimeDate.value || ""))) {
+    el.workTimeDate.value = defaultDate;
+  }
+  if (el.workTimeStart && !el.workTimeStart.value) el.workTimeStart.value = "08:00";
+  if (el.workTimeEnd && !el.workTimeEnd.value) el.workTimeEnd.value = "16:00";
+  if (el.workTimeBreak && !String(el.workTimeBreak.value || "").trim()) el.workTimeBreak.value = "0";
+}
+
+function formatHoursFromMinutes(minutes) {
+  const safeMinutes = Number.isFinite(minutes) ? Math.max(0, minutes) : 0;
+  const hours = safeMinutes / 60;
+  return hours.toLocaleString("de-DE", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 2,
+  });
+}
+
+function deleteWorkTimeEntry(entryId) {
+  const project = ensureActiveProjectId();
+  if (!project) return;
+  const shifts = ensureProjectWorkShifts(project);
+  const next = shifts.filter((item) => item.id !== entryId);
+  if (next.length === shifts.length) return;
+  project.workShifts = next;
+  renderWorkTimes();
+  persist();
+  setWorkTimeStatus("Arbeitszeit-Eintrag entfernt.", "success");
+}
+
+function renderWorkTimes() {
+  if (!el.workTimesTableBody || !el.workTimesDaySummary || !el.workTimesEntryCount) return;
+  const project = ensureActiveProjectId();
+  if (!project) {
+    el.workTimesTableBody.innerHTML = "";
+    el.workTimesDaySummary.textContent = "Gesamtstunden: 0,0 h";
+    el.workTimesEntryCount.textContent = "0 Einträge";
+    return;
+  }
+
+  const selectedDate = getSelectedWorkTimeDate();
+  if (el.workTimeDate) el.workTimeDate.value = selectedDate;
+  const shifts = ensureProjectWorkShifts(project);
+  const dayEntries = shifts
+    .filter((item) => item.date === selectedDate)
+    .sort((a, b) => {
+      const startA = parseTimeToMinutes(a.start) ?? 0;
+      const startB = parseTimeToMinutes(b.start) ?? 0;
+      if (startA !== startB) return startA - startB;
+      return String(a.employee || "").localeCompare(String(b.employee || ""), "de-DE");
+    });
+
+  let totalMinutes = 0;
+  el.workTimesTableBody.innerHTML = "";
+
+  if (!dayEntries.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 7;
+    cell.className = "worktimes-empty";
+    cell.textContent = "Noch keine Arbeitszeiten für dieses Datum.";
+    row.appendChild(cell);
+    el.workTimesTableBody.appendChild(row);
+  } else {
+    for (const item of dayEntries) {
+      const duration = getShiftDurationMinutes(item.start, item.end, item.breakMinutes);
+      if (duration == null) continue;
+      totalMinutes += duration;
+
+      const row = document.createElement("tr");
+      const employeeCell = document.createElement("td");
+      employeeCell.textContent = item.employee || "-";
+      const companyCell = document.createElement("td");
+      companyCell.textContent = item.company || "-";
+      const startCell = document.createElement("td");
+      startCell.textContent = item.start;
+      const endCell = document.createElement("td");
+      endCell.textContent = item.end;
+      const breakCell = document.createElement("td");
+      breakCell.textContent = `${item.breakMinutes} Min.`;
+      const hoursCell = document.createElement("td");
+      hoursCell.textContent = `${formatHoursFromMinutes(duration)} h`;
+      const actionCell = document.createElement("td");
+      row.appendChild(employeeCell);
+      row.appendChild(companyCell);
+      row.appendChild(startCell);
+      row.appendChild(endCell);
+      row.appendChild(breakCell);
+      row.appendChild(hoursCell);
+      row.appendChild(actionCell);
+
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "worktimes-remove";
+      removeButton.textContent = "x";
+      removeButton.setAttribute("aria-label", "Eintrag löschen");
+      removeButton.addEventListener("click", () => deleteWorkTimeEntry(item.id));
+      actionCell?.appendChild(removeButton);
+
+      el.workTimesTableBody.appendChild(row);
+    }
+  }
+
+  const countLabel = dayEntries.length === 1 ? "Eintrag" : "Einträge";
+  el.workTimesDaySummary.textContent = `Gesamtstunden: ${formatHoursFromMinutes(totalMinutes)} h`;
+  el.workTimesEntryCount.textContent = `${dayEntries.length} ${countLabel}`;
+}
+
+function addWorkTimeEntry() {
+  const project = ensureActiveProjectId();
+  if (!project) return false;
+
+  const date = String(el.workTimeDate?.value || "").trim();
+  const start = String(el.workTimeStart?.value || "").trim();
+  const end = String(el.workTimeEnd?.value || "").trim();
+  const employee = normalizeUserName(el.workTimeName?.value || "");
+  const company = normalizeUserName(el.workTimeCompany?.value || "");
+  const breakMinutes = normalizeBreakMinutes(el.workTimeBreak?.value || 0);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    setWorkTimeStatus("Bitte ein gültiges Datum wählen.", "error");
+    return false;
+  }
+  if (!employee) {
+    setWorkTimeStatus("Bitte Mitarbeiter eintragen.", "error");
+    return false;
+  }
+  if (!company) {
+    setWorkTimeStatus("Bitte Unternehmen eintragen.", "error");
+    return false;
+  }
+
+  const startMinutes = parseTimeToMinutes(start);
+  const endMinutes = parseTimeToMinutes(end);
+  if (startMinutes == null || endMinutes == null) {
+    setWorkTimeStatus("Bitte gültige Uhrzeiten eintragen.", "error");
+    return false;
+  }
+  if (endMinutes <= startMinutes) {
+    setWorkTimeStatus("Endzeit muss nach der Startzeit liegen.", "error");
+    return false;
+  }
+
+  const grossMinutes = endMinutes - startMinutes;
+  if (breakMinutes >= grossMinutes) {
+    setWorkTimeStatus("Pause ist zu lang für den gewählten Zeitraum.", "error");
+    return false;
+  }
+
+  const duration = getShiftDurationMinutes(start, end, breakMinutes);
+  if (duration == null) {
+    setWorkTimeStatus("Die Zeitspanne ist ungültig.", "error");
+    return false;
+  }
+
+  const shifts = ensureProjectWorkShifts(project);
+  shifts.push({
+    id: uid(),
+    date,
+    start,
+    end,
+    employee,
+    company,
+    breakMinutes,
+    createdAt: new Date().toISOString(),
+  });
+  project.workShifts = shifts;
+
+  persist();
+  renderWorkTimes();
+  if (el.workTimeName) el.workTimeName.value = "";
+  if (el.workTimeBreak) el.workTimeBreak.value = "0";
+  setWorkTimeStatus(`Arbeitszeit gespeichert (${formatHoursFromMinutes(duration)} h).`, "success");
+  if (el.workTimeName) el.workTimeName.focus();
+  return true;
+}
+
 function updateStatus(text) {
   el.statusBadge.textContent = text;
 }
@@ -1469,6 +1773,8 @@ function switchActiveProject(projectId) {
   syncEntryInputs();
   renderPhotoFolders();
   renderPhotos();
+  syncWorkTimeInputs();
+  renderWorkTimes();
   updateModuleAccessUi();
   persist();
 }
@@ -1483,6 +1789,8 @@ function createNewProject() {
   syncEntryInputs();
   renderPhotoFolders();
   renderPhotos();
+  syncWorkTimeInputs();
+  renderWorkTimes();
   persist();
   updateModuleAccessUi(
     "Neue Baustelle angelegt. Bitte Stammdaten eintragen und speichern.",
@@ -2476,9 +2784,13 @@ function bindEvents() {
   if (el.logoutBtn) el.logoutBtn.addEventListener("click", handleLogout);
   if (el.openBautagebuchBtn) el.openBautagebuchBtn.addEventListener("click", showBautagebuchView);
   if (el.openPhotoModuleBtn) el.openPhotoModuleBtn.addEventListener("click", showPhotoModuleView);
+  if (el.openWorkTimesBtn) el.openWorkTimesBtn.addEventListener("click", showWorkTimesView);
   if (el.backToMenuBtn) el.backToMenuBtn.addEventListener("click", showMenuView);
   if (el.backToMenuFromPhotoBtn) {
     el.backToMenuFromPhotoBtn.addEventListener("click", showMenuView);
+  }
+  if (el.backToMenuFromTimesBtn) {
+    el.backToMenuFromTimesBtn.addEventListener("click", showMenuView);
   }
 
   if (el.loginUsername) {
@@ -2599,6 +2911,25 @@ function bindEvents() {
   }
   if (el.deletePhotoFolderBtn) {
     el.deletePhotoFolderBtn.addEventListener("click", deleteActivePhotoFolder);
+  }
+  if (el.addWorkTimeBtn) {
+    el.addWorkTimeBtn.addEventListener("click", addWorkTimeEntry);
+  }
+  if (el.workTimeDate) {
+    el.workTimeDate.addEventListener("change", () => {
+      renderWorkTimes();
+      setWorkTimeStatus("");
+    });
+  }
+  const workTimeEnterInputs = [el.workTimeName, el.workTimeCompany, el.workTimeBreak];
+  for (const input of workTimeEnterInputs) {
+    if (!input) continue;
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addWorkTimeEntry();
+      }
+    });
   }
   el.exportBtn.addEventListener("click", exportJson);
   el.printBtn.addEventListener("click", () => {
@@ -2747,6 +3078,8 @@ function init() {
   syncEntryInputs();
   renderPhotoFolders();
   renderPhotos();
+  syncWorkTimeInputs();
+  renderWorkTimes();
   setCloudBusy(false);
   onSignatureCanvasResize();
   autoResizeAllTextareas();

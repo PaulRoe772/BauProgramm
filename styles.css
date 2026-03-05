@@ -221,6 +221,92 @@ body {
   margin-top: 0.4rem;
 }
 
+.worktimes-card {
+  margin-top: 0.4rem;
+}
+
+.worktimes-input-grid {
+  align-items: end;
+}
+
+.worktimes-input-action {
+  display: flex;
+  align-items: end;
+}
+
+.worktimes-input-action .btn {
+  width: 100%;
+}
+
+.worktimes-summary {
+  margin-top: 0.62rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.62rem;
+  border: 1px solid #ccd5e1;
+  border-radius: 6px;
+  background: #f8fafd;
+  color: #233a57;
+  font-weight: 700;
+}
+
+.worktimes-table-wrap {
+  margin-top: 0.62rem;
+  border: 1px solid #ccd5e1;
+  border-radius: 6px;
+  overflow-x: auto;
+  background: #fff;
+}
+
+.worktimes-table {
+  width: 100%;
+  min-width: 740px;
+  border-collapse: collapse;
+}
+
+.worktimes-table th,
+.worktimes-table td {
+  padding: 0.5rem 0.55rem;
+  border-bottom: 1px solid #d8dfea;
+  font-size: 0.9rem;
+  color: #203550;
+}
+
+.worktimes-table th {
+  background: #f2f6fb;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #345274;
+  text-align: left;
+}
+
+.worktimes-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.worktimes-table td:last-child {
+  text-align: center;
+}
+
+.worktimes-empty {
+  text-align: center;
+  color: #5a6c83;
+  font-style: italic;
+}
+
+.worktimes-remove {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #ccd5e2;
+  border-radius: 5px;
+  background: #f7f9fc;
+  color: #3f5a7a;
+  cursor: pointer;
+}
+
 .layout {
   position: relative;
   width: 100%;
@@ -803,6 +889,11 @@ textarea {
   .photo-folder-controls {
     grid-template-columns: 1fr;
   }
+
+  .worktimes-summary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 @page {
@@ -816,6 +907,7 @@ textarea {
   #authView,
   #menuView,
   #photoModuleView,
+  #workTimesView,
   .module-toolbar,
   .panel-left,
   .report-card,
