@@ -98,6 +98,7 @@ const el = {
   workTimeCompany: document.getElementById("workTimeCompany"),
   workTimeBreak: document.getElementById("workTimeBreak"),
   addWorkTimeBtn: document.getElementById("addWorkTimeBtn"),
+  exportWorkTimesPdfBtn: document.getElementById("exportWorkTimesPdfBtn"),
   workTimeStatus: document.getElementById("workTimeStatus"),
   workTimesDaySummary: document.getElementById("workTimesDaySummary"),
   workTimesEntryCount: document.getElementById("workTimesEntryCount"),
@@ -1518,6 +1519,143 @@ function addWorkTimeEntry() {
   return true;
 }
 
+function escapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function exportAllWorkTimesPdf() {
+  const project = ensureActiveProjectId();
+  if (!project) return;
+
+  const rows = ensureProjectWorkShifts(project)
+    .map((item) => ({
+      item,
+      durationMinutes: getShiftDurationMinutes(item.start, item.end, item.breakMinutes),
+    }))
+    .filter((entry) => Number.isFinite(entry.durationMinutes) && entry.durationMinutes > 0)
+    .sort((a, b) => {
+      const byDate = String(a.item.date || "").localeCompare(String(b.item.date || ""));
+      if (byDate !== 0) return byDate;
+      const startA = parseTimeToMinutes(a.item.start) ?? 0;
+      const startB = parseTimeToMinutes(b.item.start) ?? 0;
+      if (startA !== startB) return startA - startB;
+      return String(a.item.employee || "").localeCompare(String(b.item.employee || ""), "de-DE");
+    });
+
+  if (!rows.length) {
+    setWorkTimeStatus("Keine gespeicherten Arbeitszeiten für die PDF vorhanden.", "error");
+    return;
+  }
+
+  const totalMinutes = rows.reduce((sum, row) => sum + row.durationMinutes, 0);
+  const generatedAt = new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+  const projectName = normalizeUserName(project.name) || "-";
+  const projectNumber = normalizeUserName(project.number) || "-";
+  const projectManager = normalizeUserName(project.manager) || "-";
+
+  const tableRows = rows
+    .map(
+      ({ item, durationMinutes }) => `
+        <tr>
+          <td>${escapeHtml(fmtEntryDate(item.date))}</td>
+          <td>${escapeHtml(item.employee || "-")}</td>
+          <td>${escapeHtml(item.company || "-")}</td>
+          <td>${escapeHtml(item.start)}</td>
+          <td>${escapeHtml(item.end)}</td>
+          <td>${escapeHtml(String(item.breakMinutes))} Min.</td>
+          <td>${escapeHtml(formatHoursFromMinutes(durationMinutes))} h</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  const docHtml = `<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arbeitszeiten - ${escapeHtml(projectName)}</title>
+    <style>
+      @page { size: A4 portrait; margin: 14mm 12mm; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: "Source Sans 3", Arial, sans-serif; color: #172334; background: #fff; }
+      .page { width: 100%; padding: 0; }
+      .head { border-bottom: 1px solid #c4ccda; padding-bottom: 10px; margin-bottom: 12px; }
+      .kicker { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #355173; font-weight: 700; }
+      h1 { margin: 4px 0 2px; font-size: 22px; font-family: Merriweather, Georgia, serif; }
+      .meta { margin-top: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+      .meta div { border: 1px solid #cfd6e2; padding: 6px 8px; font-size: 12px; }
+      .meta strong { display: block; font-size: 13px; color: #1a2d45; margin-top: 2px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #cfd6e2; padding: 6px 7px; font-size: 12px; text-align: left; }
+      th { background: #eef3fa; text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px; color: #304f73; }
+      tfoot td { font-weight: 700; background: #f7f9fc; }
+      .right { text-align: right; }
+      .footer { margin-top: 10px; font-size: 11px; color: #4f6077; }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="head">
+        <p class="kicker">Baudokumentation - Arbeitszeiten</p>
+        <h1>Gesamtübersicht Arbeitszeiten</h1>
+        <div class="meta">
+          <div>Baustelle<strong>${escapeHtml(projectName)}</strong></div>
+          <div>Projekt-Nr.<strong>${escapeHtml(projectNumber)}</strong></div>
+          <div>Bauleitung<strong>${escapeHtml(projectManager)}</strong></div>
+          <div>Erstellt am<strong>${escapeHtml(generatedAt)}</strong></div>
+        </div>
+      </header>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Datum</th>
+            <th>Mitarbeiter</th>
+            <th>Unternehmen</th>
+            <th>Von</th>
+            <th>Bis</th>
+            <th>Pause</th>
+            <th>Stunden</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="6" class="right">Gesamtstunden</td>
+            <td>${escapeHtml(formatHoursFromMinutes(totalMinutes))} h</td>
+          </tr>
+        </tfoot>
+      </table>
+      <p class="footer">Einträge gesamt: ${escapeHtml(String(rows.length))}</p>
+    </main>
+    <script>
+      window.addEventListener("load", function () {
+        setTimeout(function () { window.print(); }, 220);
+      });
+    </script>
+  </body>
+</html>`;
+
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    setWorkTimeStatus("Pop-up blockiert. Bitte Pop-ups erlauben und erneut klicken.", "error");
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(docHtml);
+  printWindow.document.close();
+  printWindow.focus();
+  setWorkTimeStatus("PDF-Ansicht geöffnet. Im Druckdialog 'Als PDF speichern' wählen.", "success");
+}
+
 function updateStatus(text) {
   el.statusBadge.textContent = text;
 }
@@ -2914,6 +3052,9 @@ function bindEvents() {
   }
   if (el.addWorkTimeBtn) {
     el.addWorkTimeBtn.addEventListener("click", addWorkTimeEntry);
+  }
+  if (el.exportWorkTimesPdfBtn) {
+    el.exportWorkTimesPdfBtn.addEventListener("click", exportAllWorkTimesPdf);
   }
   if (el.workTimeDate) {
     el.workTimeDate.addEventListener("change", () => {

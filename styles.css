@@ -307,6 +307,11 @@ body {
   cursor: pointer;
 }
 
+.worktimes-actions {
+  margin-top: 0.75rem;
+  justify-content: flex-end;
+}
+
 .layout {
   position: relative;
   width: 100%;
