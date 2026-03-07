@@ -3,6 +3,7 @@ const AUTH_USERS_KEY = "bautagebuch-pro-users-v1";
 const AUTH_SESSION_KEY = "bautagebuch-pro-session-v1";
 const CLOUD_CONFIG_KEY = "bautagebuch-pro-cloud-config-v1";
 const CLOUD_TABLE = "app_state";
+const CLOUD_STORAGE_BUCKET = "bau-files";
 const ROLE_ADMIN = "admin";
 const ROLE_BAULEITUNG = "bauleitung";
 const ROLE_MITARBEITER = "mitarbeiter";
@@ -270,11 +271,178 @@ function ensureCloudClient(config) {
   });
 }
 
+function getCloudBaseUrl() {
+  const url = String(cloud.url || el.cloudSupabaseUrl?.value || "").trim();
+  return url.replace(/\/+$/g, "");
+}
+
+function normalizeCloudPath(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^\/+/g, "")
+    .replace(/\.\./g, "")
+    .replace(/\\/g, "/");
+}
+
+function sanitizeStorageSegment(value, fallback = "item") {
+  const cleaned = String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return cleaned || fallback;
+}
+
+function resolveCloudFileUrl(pathValue) {
+  const path = normalizeCloudPath(pathValue);
+  if (!path) return "";
+
+  if (cloud.client) {
+    const { data } = cloud.client.storage.from(CLOUD_STORAGE_BUCKET).getPublicUrl(path);
+    if (data?.publicUrl) return data.publicUrl;
+  }
+
+  const baseUrl = getCloudBaseUrl();
+  if (!baseUrl) return "";
+  const encodedPath = path
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `${baseUrl}/storage/v1/object/public/${CLOUD_STORAGE_BUCKET}/${encodedPath}`;
+}
+
+function getMimeTypeFromDataUrl(dataUrl) {
+  const match = /^data:([^;,]+)[;,]/i.exec(String(dataUrl || ""));
+  return match ? String(match[1]).toLowerCase() : "";
+}
+
+function getFileExtensionFromMimeType(mimeType) {
+  const mime = String(mimeType || "").toLowerCase();
+  if (mime === "image/jpeg" || mime === "image/jpg") return "jpg";
+  if (mime === "image/png") return "png";
+  if (mime === "image/webp") return "webp";
+  if (mime === "image/gif") return "gif";
+  if (mime === "image/heic") return "heic";
+  if (mime === "image/heif") return "heif";
+  if (mime === "image/svg+xml") return "svg";
+  return "bin";
+}
+
+function getDataUrlFileExtension(dataUrl) {
+  return getFileExtensionFromMimeType(getMimeTypeFromDataUrl(dataUrl));
+}
+
+async function uploadDataUrlToCloud(dataUrl, path) {
+  if (!cloud.client) throw new Error("Cloud-Client nicht bereit.");
+  const safePath = normalizeCloudPath(path);
+  if (!safePath) throw new Error("Ungültiger Speicherpfad.");
+  if (!String(dataUrl || "").startsWith("data:")) {
+    throw new Error("Ungültige Datei: Kein Data-URL Inhalt.");
+  }
+
+  const response = await fetch(dataUrl);
+  if (!response.ok) {
+    throw new Error("Datei konnte nicht gelesen werden.");
+  }
+  const blob = await response.blob();
+  const contentType = blob.type || getMimeTypeFromDataUrl(dataUrl) || "application/octet-stream";
+  const { error } = await cloud.client.storage.from(CLOUD_STORAGE_BUCKET).upload(safePath, blob, {
+    upsert: true,
+    contentType,
+  });
+  if (error) throw error;
+  return safePath;
+}
+
+async function uploadPendingCloudAssets() {
+  if (!cloud.connected || !cloud.client || !cloud.workspaceKey) return 0;
+  let uploadCount = 0;
+
+  for (const project of state.projects) {
+    const projectId = sanitizeStorageSegment(project?.id, "project");
+    const entries = Array.isArray(project?.entries) ? project.entries : [];
+    const projectPhotos = Array.isArray(project?.photos) ? project.photos : [];
+
+    for (const entry of entries) {
+      const entryId = sanitizeStorageSegment(entry?.id, "entry");
+
+      if (entry?.signatureDataUrl && !entry?.signatureCloudPath) {
+        const ext = getDataUrlFileExtension(entry.signatureDataUrl);
+        const signaturePath = `${cloud.workspaceKey}/projects/${projectId}/entries/${entryId}/signature.${ext}`;
+        entry.signatureCloudPath = await uploadDataUrlToCloud(entry.signatureDataUrl, signaturePath);
+        entry.signatureDataUrl = "";
+        uploadCount += 1;
+      }
+
+      const entryPhotos = Array.isArray(entry?.photos) ? entry.photos : [];
+      for (const photo of entryPhotos) {
+        if (!photo?.dataUrl || photo?.cloudPath) continue;
+        const photoId = sanitizeStorageSegment(photo.id || uid(), "photo");
+        const ext = getDataUrlFileExtension(photo.dataUrl);
+        const photoPath = `${cloud.workspaceKey}/projects/${projectId}/entries/${entryId}/photos/${photoId}.${ext}`;
+        photo.cloudPath = await uploadDataUrlToCloud(photo.dataUrl, photoPath);
+        photo.id = photoId;
+        photo.dataUrl = "";
+        uploadCount += 1;
+      }
+    }
+
+    for (const photo of projectPhotos) {
+      if (!photo?.dataUrl || photo?.cloudPath) continue;
+      const folderId = sanitizeStorageSegment(photo.folderId || DEFAULT_PHOTO_FOLDER_ID, DEFAULT_PHOTO_FOLDER_ID);
+      const photoId = sanitizeStorageSegment(photo.id || uid(), "photo");
+      const ext = getDataUrlFileExtension(photo.dataUrl);
+      const photoPath = `${cloud.workspaceKey}/projects/${projectId}/folders/${folderId}/${photoId}.${ext}`;
+      photo.cloudPath = await uploadDataUrlToCloud(photo.dataUrl, photoPath);
+      photo.id = photoId;
+      photo.dataUrl = "";
+      uploadCount += 1;
+    }
+  }
+
+  return uploadCount;
+}
+
+function createCloudPhotoSnapshot(photo, includeFolder = false) {
+  const item = {
+    id: String(photo?.id || uid()),
+    name: String(photo?.name || "Baufoto"),
+    cloudPath: normalizeCloudPath(photo?.cloudPath || ""),
+  };
+  if (includeFolder) {
+    item.folderId = String(photo?.folderId || DEFAULT_PHOTO_FOLDER_ID);
+  }
+  return item;
+}
+
+function createCloudEntrySnapshot(entry) {
+  return {
+    ...entry,
+    signatureDataUrl: "",
+    signatureCloudPath: normalizeCloudPath(entry?.signatureCloudPath || ""),
+    photos: Array.isArray(entry?.photos)
+      ? entry.photos.map((photo) => createCloudPhotoSnapshot(photo, false))
+      : [],
+  };
+}
+
+function createCloudProjectSnapshot(project) {
+  return {
+    ...project,
+    entries: Array.isArray(project?.entries)
+      ? project.entries.map((entry) => createCloudEntrySnapshot(entry))
+      : [],
+    photos: Array.isArray(project?.photos)
+      ? project.photos.map((photo) => createCloudPhotoSnapshot(photo, true))
+      : [],
+  };
+}
+
 function getCloudPayload() {
   return {
     schemaVersion: 2,
     activeProjectId: state.activeProjectId,
-    projects: state.projects,
+    projects: state.projects.map((project) => createCloudProjectSnapshot(project)),
     savedAt: new Date().toISOString(),
   };
 }
@@ -304,6 +472,11 @@ async function pushCloudState() {
   if (cloud.syncing) return;
   cloud.syncing = true;
   try {
+    const uploaded = await uploadPendingCloudAssets();
+    if (uploaded > 0) {
+      persist(true);
+      refreshUiFromState();
+    }
     const payload = getCloudPayload();
     const { error } = await cloud.client.from(CLOUD_TABLE).upsert(
       {
@@ -316,7 +489,15 @@ async function pushCloudState() {
     if (error) throw error;
     setCloudStatus("Cloud synchronisiert.", "success");
   } catch (error) {
-    setCloudStatus(`Cloud-Fehler: ${error.message || "Synchronisierung fehlgeschlagen."}`, "error");
+    const message = String(error?.message || "Synchronisierung fehlgeschlagen.");
+    if (/bucket|storage/i.test(message)) {
+      setCloudStatus(
+        `Cloud-Fehler: ${message} (Storage-Bucket "${CLOUD_STORAGE_BUCKET}" prüfen).`,
+        "error"
+      );
+    } else {
+      setCloudStatus(`Cloud-Fehler: ${message}`, "error");
+    }
   } finally {
     cloud.syncing = false;
     setCloudBusy(false);
@@ -879,9 +1060,10 @@ function ensureProjectMediaState(project = null) {
       id: String(photo?.id || uid()),
       name: String(photo?.name || "Baufoto"),
       dataUrl: String(photo?.dataUrl || ""),
+      cloudPath: normalizeCloudPath(photo?.cloudPath || photo?.path || ""),
       folderId: String(photo?.folderId || DEFAULT_PHOTO_FOLDER_ID),
     }))
-    .filter((photo) => photo.dataUrl);
+    .filter((photo) => photo.dataUrl || photo.cloudPath);
 
   for (const photo of target.photos) {
     if (!validFolderIds.has(photo.folderId)) {
@@ -907,9 +1089,19 @@ function emptyEntry() {
     nextSteps: "",
     privateNotes: "",
     signatureDataUrl: "",
+    signatureCloudPath: "",
     todos: [],
     photos: [],
     savedAt: null,
+  };
+}
+
+function normalizeEntryPhoto(source = {}) {
+  return {
+    id: String(source?.id || uid()),
+    name: String(source?.name || "Baufoto"),
+    dataUrl: String(source?.dataUrl || ""),
+    cloudPath: normalizeCloudPath(source?.cloudPath || source?.path || ""),
   };
 }
 
@@ -920,11 +1112,14 @@ function normalizeEntry(source = {}) {
     ...rest,
     id: String(source?.id || uid()),
     todos: Array.isArray(source?.todos) ? source.todos : [],
-    photos: Array.isArray(source?.photos) ? source.photos : [],
+    photos: Array.isArray(source?.photos)
+      ? source.photos.map((photo) => normalizeEntryPhoto(photo)).filter((photo) => photo.dataUrl || photo.cloudPath)
+      : [],
     companyWorkers: Array.isArray(source?.companyWorkers) ? source.companyWorkers : [],
     weather: String(source?.weather || "").replace(/^Bewoelkt$/i, "Bewölkt"),
     privateNotes: String(source?.privateNotes || ""),
     signatureDataUrl: typeof source?.signatureDataUrl === "string" ? source.signatureDataUrl : "",
+    signatureCloudPath: normalizeCloudPath(source?.signatureCloudPath || source?.signaturePath || ""),
   };
 }
 
@@ -1095,6 +1290,18 @@ function syncProjectInputs() {
   updateWorkTimesBadge();
 }
 
+function resolvePhotoSource(photo) {
+  const localSource = String(photo?.dataUrl || "").trim();
+  if (localSource) return localSource;
+  return resolveCloudFileUrl(photo?.cloudPath || "");
+}
+
+function getEntrySignatureSource(entry) {
+  const localSignature = String(entry?.signatureDataUrl || "").trim();
+  if (localSignature) return localSignature;
+  return resolveCloudFileUrl(entry?.signatureCloudPath || "");
+}
+
 function syncEntryInputs() {
   const entry = getActiveEntry();
   if (!entry) return;
@@ -1107,7 +1314,7 @@ function syncEntryInputs() {
   el.issues.value = entry.issues || "";
   el.nextSteps.value = entry.nextSteps || "";
   el.privateNotes.value = entry.privateNotes || "";
-  renderSignature(entry.signatureDataUrl || "");
+  renderSignature(getEntrySignatureSource(entry));
   autoResizeAllTextareas();
   renderTodos(entry);
   renderEntryPhotos(entry);
@@ -1371,13 +1578,15 @@ function renderEntryPhotos(entry) {
     return;
   }
 
+  let rendered = 0;
   for (const photo of photos) {
-    if (!photo?.dataUrl) continue;
+    const src = resolvePhotoSource(photo);
+    if (!src) continue;
     const wrapper = document.createElement("div");
     wrapper.className = "photo";
 
     const img = document.createElement("img");
-    img.src = photo.dataUrl;
+    img.src = src;
     img.alt = photo.name || "Baufoto";
 
     const remove = document.createElement("button");
@@ -1393,6 +1602,14 @@ function renderEntryPhotos(entry) {
     wrapper.appendChild(img);
     wrapper.appendChild(remove);
     el.entryPhotoGrid.appendChild(wrapper);
+    rendered += 1;
+  }
+
+  if (!rendered) {
+    const empty = document.createElement("p");
+    empty.className = "photo-empty";
+    empty.textContent = "Fotos sind in der Cloud gespeichert. Bitte Cloud verbinden.";
+    el.entryPhotoGrid.appendChild(empty);
   }
 }
 
@@ -1418,11 +1635,14 @@ function renderPhotos() {
     return;
   }
 
+  let rendered = 0;
   for (const photo of visiblePhotos) {
+    const src = resolvePhotoSource(photo);
+    if (!src) continue;
     const wrapper = document.createElement("div");
     wrapper.className = "photo";
     const img = document.createElement("img");
-    img.src = photo.dataUrl;
+    img.src = src;
     img.alt = photo.name || "Baufoto";
     const remove = document.createElement("button");
     remove.type = "button";
@@ -1437,6 +1657,14 @@ function renderPhotos() {
     wrapper.appendChild(img);
     wrapper.appendChild(remove);
     el.photoGrid.appendChild(wrapper);
+    rendered += 1;
+  }
+
+  if (!rendered) {
+    const empty = document.createElement("p");
+    empty.className = "photo-empty";
+    empty.textContent = "Bilder sind in der Cloud gespeichert. Bitte Cloud verbinden.";
+    el.photoGrid.appendChild(empty);
   }
 }
 
@@ -2086,7 +2314,14 @@ function preparePrintReport() {
   const projectNumber = el.projectNumber ? el.projectNumber.value.trim() : project.number || "";
   const siteManager = el.siteManager ? el.siteManager.value.trim() : project.manager || "";
   const generatedAt = new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
-  const photos = Array.isArray(entry.photos) ? entry.photos.filter((photo) => photo?.dataUrl) : [];
+  const photos = Array.isArray(entry.photos)
+    ? entry.photos
+        .map((photo) => ({
+          ...photo,
+          source: resolvePhotoSource(photo),
+        }))
+        .filter((photo) => photo.source)
+    : [];
 
   const fragment = document.createDocumentFragment();
   const page = createPrintPage("Baustellentagebuch - Tagesbericht", "Formeller Baustellenbericht");
@@ -2134,7 +2369,7 @@ function preparePrintReport() {
       const figure = document.createElement("figure");
       figure.className = "print-photo-item";
       const img = document.createElement("img");
-      img.src = photo.dataUrl;
+      img.src = photo.source;
       img.alt = photo.name || "Baufoto";
       const caption = document.createElement("figcaption");
       caption.textContent = toPrintText(photo.name, "Foto");
@@ -2147,11 +2382,12 @@ function preparePrintReport() {
   page.appendChild(photoSection);
 
   const signatureSection = createPrintSection("Unterschrift Bauleitung");
-  if (entry.signatureDataUrl) {
+  const signatureSource = getEntrySignatureSource(entry);
+  if (signatureSource) {
     const preview = document.createElement("div");
     preview.className = "print-signature-preview";
     const image = document.createElement("img");
-    image.src = entry.signatureDataUrl;
+    image.src = signatureSource;
     image.alt = "Digitale Unterschrift";
     preview.appendChild(image);
     signatureSection.appendChild(preview);
@@ -2466,6 +2702,7 @@ async function appendEntryPhotoFiles(files) {
       id: uid(),
       name: file.name,
       dataUrl,
+      cloudPath: "",
     });
   }
 
@@ -2488,6 +2725,7 @@ async function appendPhotoFiles(files) {
       id: uid(),
       name: file.name,
       dataUrl,
+      cloudPath: "",
       folderId: activeFolderId,
     });
   }
@@ -2616,6 +2854,7 @@ function persistSignatureToEntry() {
   const canvas = el.signatureCanvas;
   if (!entry || !canvas) return;
   entry.signatureDataUrl = signaturePad.hasInk ? canvas.toDataURL("image/png") : "";
+  entry.signatureCloudPath = "";
   persist();
   updateStatus("Ungespeichert");
 }
@@ -2642,7 +2881,7 @@ function onSignatureCanvasResize() {
   }
   signaturePad.resizeTimer = window.setTimeout(() => {
     const entry = getActiveEntry();
-    renderSignature(entry ? entry.signatureDataUrl : "");
+    renderSignature(entry ? getEntrySignatureSource(entry) : "");
   }, 120);
 }
 
