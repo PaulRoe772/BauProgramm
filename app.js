@@ -26,6 +26,7 @@ const el = {
   photoModuleView: document.getElementById("photoModuleView"),
   workTimesView: document.getElementById("workTimesView"),
   sessionLabel: document.getElementById("sessionLabel"),
+  saveIndicator: document.getElementById("saveIndicator"),
   logoutBtn: document.getElementById("logoutBtn"),
   modulesWrap: document.getElementById("modulesWrap"),
   projectSetupStatus: document.getElementById("projectSetupStatus"),
@@ -63,6 +64,16 @@ const el = {
   cloudStatus: document.getElementById("cloudStatus"),
   newEntryBtn: document.getElementById("newEntryBtn"),
   entryList: document.getElementById("entryList"),
+  overviewTotalReports: document.getElementById("overviewTotalReports"),
+  overviewSavedReports: document.getElementById("overviewSavedReports"),
+  overviewDraftReports: document.getElementById("overviewDraftReports"),
+  overviewMonthFilter: document.getElementById("overviewMonthFilter"),
+  overviewLastSaved: document.getElementById("overviewLastSaved"),
+  overviewDaysList: document.getElementById("overviewDaysList"),
+  manageDateDelete: document.getElementById("manageDateDelete"),
+  deleteDateReportsBtn: document.getElementById("deleteDateReportsBtn"),
+  deleteDraftReportsBtn: document.getElementById("deleteDraftReportsBtn"),
+  manageReportsStatus: document.getElementById("manageReportsStatus"),
   statusBadge: document.getElementById("statusBadge"),
   printProjectName: document.getElementById("printProjectName"),
   printProjectNumber: document.getElementById("printProjectNumber"),
@@ -139,6 +150,11 @@ const cloud = {
   syncing: false,
 };
 
+const autoSaveDraft = {
+  timer: null,
+  delayMs: 650,
+};
+
 function setHidden(node, hidden) {
   if (!node) return;
   node.classList.toggle("hidden", Boolean(hidden));
@@ -149,6 +165,22 @@ function setFeedback(node, text = "", kind = "") {
   node.textContent = text || "";
   node.classList.remove("error", "success");
   if (kind) node.classList.add(kind);
+}
+
+function setSaveIndicator(mode = "saved", text = "") {
+  if (!el.saveIndicator) return;
+  const label = String(text || "").trim();
+  el.saveIndicator.textContent = label || "Gespeichert";
+  el.saveIndicator.classList.remove("save-indicator-saved", "save-indicator-saving", "save-indicator-dirty");
+  if (mode === "saving") {
+    el.saveIndicator.classList.add("save-indicator-saving");
+    return;
+  }
+  if (mode === "dirty") {
+    el.saveIndicator.classList.add("save-indicator-dirty");
+    return;
+  }
+  el.saveIndicator.classList.add("save-indicator-saved");
 }
 
 function normalizeWorkspaceKey(value) {
@@ -259,6 +291,7 @@ function refreshUiFromState() {
   syncProjectInputs();
   renderEntries();
   syncEntryInputs();
+  setManageReportsStatus("");
   renderPhotoFolders();
   renderPhotos();
   syncWorkTimeInputs();
@@ -597,6 +630,7 @@ function showBautagebuchView() {
   }
   showView("bautagebuch");
   syncProjectInputs();
+  setManageReportsStatus("");
   renderEntries();
   syncEntryInputs();
   onSignatureCanvasResize();
@@ -1039,6 +1073,9 @@ function loadState() {
 function persist(localOnly = false) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if (!localOnly) scheduleCloudSync();
+  if (!autoSaveDraft.timer) {
+    setSaveIndicator("saved", "Änderungen gespeichert");
+  }
 }
 
 function getActiveEntry() {
@@ -1074,8 +1111,11 @@ function syncEntryInputs() {
   autoResizeAllTextareas();
   renderTodos(entry);
   renderEntryPhotos(entry);
-  updateStatus(entry.savedAt ? `Gespeichert ${fmt(entry.savedAt)}` : "Nicht gespeichert");
+  updateStatus(entry.savedAt ? `Gespeichert ${fmt(entry.savedAt)}` : "Noch nicht gespeichert");
   updatePrintMeta();
+  if (el.manageDateDelete) {
+    el.manageDateDelete.value = entry.date || "";
+  }
 }
 
 function pullInputsToActiveEntry() {
@@ -1093,19 +1133,156 @@ function pullInputsToActiveEntry() {
   updatePrintMeta();
 }
 
+function setManageReportsStatus(text = "", kind = "") {
+  setFeedback(el.manageReportsStatus, text, kind);
+}
+
+function clearReportOverview() {
+  if (el.overviewTotalReports) el.overviewTotalReports.textContent = "0";
+  if (el.overviewSavedReports) el.overviewSavedReports.textContent = "0";
+  if (el.overviewDraftReports) el.overviewDraftReports.textContent = "0";
+  if (el.overviewLastSaved) el.overviewLastSaved.textContent = "-";
+  if (el.overviewDaysList) el.overviewDaysList.innerHTML = "";
+}
+
+function getEntriesSortedByDate(entries = []) {
+  return [...entries].sort((a, b) => {
+    const dateA = String(a?.date || "");
+    const dateB = String(b?.date || "");
+    if (dateA !== dateB) return dateA < dateB ? 1 : -1;
+    const savedA = String(a?.savedAt || "");
+    const savedB = String(b?.savedAt || "");
+    return savedA < savedB ? 1 : -1;
+  });
+}
+
+function ensureProjectEntriesIntegrity(project) {
+  if (!project) return null;
+  if (!Array.isArray(project.entries)) project.entries = [];
+  if (!project.entries.length) {
+    const entry = emptyEntry();
+    project.entries = [entry];
+    project.activeEntryId = entry.id;
+    return entry;
+  }
+  if (!project.entries.some((item) => item.id === project.activeEntryId)) {
+    const sorted = getEntriesSortedByDate(project.entries);
+    project.activeEntryId = sorted[0].id;
+  }
+  return project.entries.find((item) => item.id === project.activeEntryId) || project.entries[0];
+}
+
+function renderReportOverview() {
+  if (!el.overviewDaysList) return;
+  const project = ensureActiveProjectId();
+  if (!project) {
+    clearReportOverview();
+    return;
+  }
+
+  ensureProjectEntriesIntegrity(project);
+  const entries = Array.isArray(project.entries) ? project.entries : [];
+  const savedEntries = entries.filter((item) => Boolean(item.savedAt));
+  const draftEntries = entries.filter((item) => !item.savedAt);
+
+  if (el.overviewTotalReports) el.overviewTotalReports.textContent = String(entries.length);
+  if (el.overviewSavedReports) el.overviewSavedReports.textContent = String(savedEntries.length);
+  if (el.overviewDraftReports) el.overviewDraftReports.textContent = String(draftEntries.length);
+
+  const latestSaved = savedEntries
+    .map((item) => String(item.savedAt || ""))
+    .filter(Boolean)
+    .sort((a, b) => (a < b ? 1 : -1))[0];
+  if (el.overviewLastSaved) {
+    el.overviewLastSaved.textContent = latestSaved ? fmt(latestSaved) : "-";
+  }
+
+  const activeEntry = getActiveEntry();
+  const fallbackMonth = String(activeEntry?.date || todayIsoDate()).slice(0, 7);
+  const monthValue = String(el.overviewMonthFilter?.value || "").trim();
+  const monthFilter = /^\d{4}-\d{2}$/.test(monthValue) ? monthValue : fallbackMonth;
+  if (el.overviewMonthFilter && el.overviewMonthFilter.value !== monthFilter) {
+    el.overviewMonthFilter.value = monthFilter;
+  }
+
+  if (el.manageDateDelete && !el.manageDateDelete.value && activeEntry?.date) {
+    el.manageDateDelete.value = activeEntry.date;
+  }
+
+  const perDate = new Map();
+  for (const item of entries) {
+    const date = String(item?.date || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !date.startsWith(monthFilter)) continue;
+    const bucket = perDate.get(date) || { date, total: 0, saved: 0, draft: 0 };
+    bucket.total += 1;
+    if (item.savedAt) {
+      bucket.saved += 1;
+    } else {
+      bucket.draft += 1;
+    }
+    perDate.set(date, bucket);
+  }
+
+  const dayBuckets = Array.from(perDate.values()).sort((a, b) => (a.date < b.date ? 1 : -1));
+  el.overviewDaysList.innerHTML = "";
+  if (!dayBuckets.length) {
+    const empty = document.createElement("p");
+    empty.className = "overview-days-empty";
+    empty.textContent = "Für diesen Monat sind keine Berichte vorhanden.";
+    el.overviewDaysList.appendChild(empty);
+    return;
+  }
+
+  for (const bucket of dayBuckets) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "overview-day-pill";
+    if (bucket.saved > 0 && bucket.draft === 0) {
+      button.classList.add("is-saved");
+    } else if (bucket.saved > 0 && bucket.draft > 0) {
+      button.classList.add("is-mixed");
+    } else {
+      button.classList.add("is-draft");
+    }
+    if (bucket.date === activeEntry?.date) {
+      button.classList.add("is-active");
+    }
+
+    const suffix = bucket.total > 1 ? ` (${bucket.total})` : "";
+    button.textContent = `${fmtEntryDate(bucket.date)}${suffix}`;
+    button.addEventListener("click", () => {
+      const matches = getEntriesSortedByDate(project.entries).filter((item) => item.date === bucket.date);
+      if (!matches.length) return;
+      const preferred = matches.find((item) => item.savedAt) || matches[0];
+      project.activeEntryId = preferred.id;
+      renderEntries();
+      syncEntryInputs();
+      setManageReportsStatus("");
+    });
+
+    el.overviewDaysList.appendChild(button);
+  }
+}
+
 function renderEntries() {
   const project = ensureActiveProjectId();
   if (!project) {
     el.entryList.innerHTML = "";
+    clearReportOverview();
     return;
   }
+  ensureProjectEntriesIntegrity(project);
   el.entryList.innerHTML = "";
   const sorted = [...project.entries].sort((a, b) => (a.date < b.date ? 1 : -1));
   for (const entry of sorted) {
     const fragment = el.entryItemTemplate.content.cloneNode(true);
     const button = fragment.querySelector(".entry-select");
-    const stamp = entry.savedAt ? ` | ${fmt(entry.savedAt, true)}` : "";
-    button.textContent = `${entry.date || "Ohne Datum"}${stamp}`;
+    const isSaved = Boolean(entry.savedAt);
+    const stamp = isSaved ? ` | ${fmt(entry.savedAt, true)}` : " | Entwurf";
+    const prefix = isSaved ? "✓ " : "• ";
+    button.textContent = `${prefix}${entry.date || "Ohne Datum"}${stamp}`;
+    button.classList.toggle("is-saved", isSaved);
+    button.classList.toggle("is-draft", !isSaved);
     button.classList.toggle("active", entry.id === project.activeEntryId);
     button.addEventListener("click", () => {
       project.activeEntryId = entry.id;
@@ -1114,6 +1291,7 @@ function renderEntries() {
     });
     el.entryList.appendChild(fragment);
   }
+  renderReportOverview();
 }
 
 function renderTodos(entry) {
@@ -1704,8 +1882,74 @@ function exportAllWorkTimesPdf() {
   setWorkTimeStatus("PDF-Ansicht geöffnet. Im Druckdialog 'Als PDF speichern' wählen.", "success");
 }
 
+function scheduleEntryAutoSave() {
+  const projectId = state.activeProjectId;
+  const entryId = getActiveEntry()?.id || "";
+  const shouldSaveEntryStamp = isBautagebuchVisible();
+  if (autoSaveDraft.timer) {
+    window.clearTimeout(autoSaveDraft.timer);
+  }
+  setSaveIndicator("saving", "Wird automatisch gespeichert...");
+  autoSaveDraft.timer = window.setTimeout(() => {
+    autoSaveDraft.timer = null;
+    if (!shouldSaveEntryStamp) {
+      persist();
+      setSaveIndicator("saved", "Änderungen gespeichert");
+      return;
+    }
+    const project = state.projects.find((item) => item.id === projectId) || null;
+    const entry = project?.entries?.find((item) => item.id === entryId) || null;
+    if (entry) {
+      entry.savedAt = new Date().toISOString();
+      persist();
+      if (state.activeProjectId === projectId && getActiveEntry()?.id === entryId) {
+        renderEntries();
+        updateStatus(`Gespeichert ${fmt(entry.savedAt, true)}`);
+      } else {
+        setSaveIndicator("saved", "Änderungen gespeichert");
+      }
+      return;
+    }
+    persist();
+    setSaveIndicator("saved", "Änderungen gespeichert");
+  }, autoSaveDraft.delayMs);
+}
+
 function updateStatus(text) {
-  el.statusBadge.textContent = text;
+  if (!el.statusBadge) return;
+  const value = String(text || "").trim();
+  const lower = value.toLowerCase();
+
+  el.statusBadge.classList.remove("status-saved", "status-saving", "status-dirty");
+
+  if (lower === "ungespeichert") {
+    el.statusBadge.textContent = "Wird automatisch gespeichert...";
+    el.statusBadge.classList.add("status-saving");
+    scheduleEntryAutoSave();
+    return;
+  }
+
+  if (!value) {
+    el.statusBadge.textContent = "Noch nicht gespeichert";
+    el.statusBadge.classList.add("status-dirty");
+    setSaveIndicator("dirty", "Noch nicht gespeichert");
+    return;
+  }
+
+  el.statusBadge.textContent = value;
+  if (lower.includes("gespeichert")) {
+    el.statusBadge.classList.add("status-saved");
+    setSaveIndicator("saved", value);
+    return;
+  }
+
+  if (lower.includes("nicht gespeichert")) {
+    el.statusBadge.classList.add("status-dirty");
+    setSaveIndicator("dirty", value);
+    return;
+  }
+
+  el.statusBadge.classList.add("status-dirty");
 }
 
 function fmt(isoString, withTime = false) {
@@ -1957,6 +2201,7 @@ function switchActiveProject(projectId) {
   syncProjectInputs();
   renderEntries();
   syncEntryInputs();
+  setManageReportsStatus("");
   renderPhotoFolders();
   renderPhotos();
   syncWorkTimeInputs();
@@ -2013,10 +2258,16 @@ function addEntry() {
   persist();
   renderEntries();
   syncEntryInputs();
+  if (el.manageDateDelete) el.manageDateDelete.value = entry.date || "";
+  setManageReportsStatus("Neuer Tagesbericht angelegt (Entwurf).", "success");
 }
 
 function saveEntry() {
   pullInputsToActiveEntry();
+  if (autoSaveDraft.timer) {
+    window.clearTimeout(autoSaveDraft.timer);
+    autoSaveDraft.timer = null;
+  }
   const entry = getActiveEntry();
   if (!entry) return;
   entry.savedAt = new Date().toISOString();
@@ -2038,10 +2289,66 @@ function deleteEntry() {
   const ok = confirm("Diesen Tagesbericht wirklich löschen?");
   if (!ok) return;
   project.entries = project.entries.filter((x) => x.id !== entry.id);
-  project.activeEntryId = project.entries[0].id;
+  ensureProjectEntriesIntegrity(project);
   persist();
   renderEntries();
   syncEntryInputs();
+  setManageReportsStatus("Bericht wurde gelöscht.", "success");
+}
+
+function deleteReportsByDate() {
+  if (denyForMitarbeiter("Als Mitarbeiter kannst du Berichte nicht löschen.")) return;
+  const project = ensureActiveProjectId();
+  if (!project) return;
+
+  const targetDate = String(el.manageDateDelete?.value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+    setManageReportsStatus("Bitte ein gültiges Datum auswählen.", "error");
+    return;
+  }
+
+  const matches = project.entries.filter((entry) => entry.date === targetDate);
+  if (!matches.length) {
+    setManageReportsStatus("Für dieses Datum wurden keine Berichte gefunden.", "error");
+    return;
+  }
+
+  const ok = confirm(
+    `${matches.length} Bericht(e) vom ${fmtEntryDate(targetDate)} wirklich löschen?`
+  );
+  if (!ok) return;
+
+  project.entries = project.entries.filter((entry) => entry.date !== targetDate);
+  ensureProjectEntriesIntegrity(project);
+  persist();
+  renderEntries();
+  syncEntryInputs();
+  setManageReportsStatus(
+    `${matches.length} Bericht(e) vom ${fmtEntryDate(targetDate)} gelöscht.`,
+    "success"
+  );
+}
+
+function deleteDraftReports() {
+  if (denyForMitarbeiter("Als Mitarbeiter kannst du Berichte nicht löschen.")) return;
+  const project = ensureActiveProjectId();
+  if (!project) return;
+
+  const drafts = project.entries.filter((entry) => !entry.savedAt);
+  if (!drafts.length) {
+    setManageReportsStatus("Es sind keine Entwürfe vorhanden.", "error");
+    return;
+  }
+
+  const ok = confirm(`${drafts.length} Entwurf/Entwürfe wirklich löschen?`);
+  if (!ok) return;
+
+  project.entries = project.entries.filter((entry) => Boolean(entry.savedAt));
+  ensureProjectEntriesIntegrity(project);
+  persist();
+  renderEntries();
+  syncEntryInputs();
+  setManageReportsStatus(`${drafts.length} Entwurf/Entwürfe gelöscht.`, "success");
 }
 
 function addTodo(textValue = null) {
@@ -3057,6 +3364,23 @@ function bindEvents() {
   el.newEntryBtn.addEventListener("click", addEntry);
   el.saveEntryBtn.addEventListener("click", saveEntry);
   el.deleteBtn.addEventListener("click", deleteEntry);
+  if (el.overviewMonthFilter) {
+    el.overviewMonthFilter.addEventListener("change", () => {
+      renderReportOverview();
+      setManageReportsStatus("");
+    });
+  }
+  if (el.manageDateDelete) {
+    el.manageDateDelete.addEventListener("change", () => {
+      setManageReportsStatus("");
+    });
+  }
+  if (el.deleteDateReportsBtn) {
+    el.deleteDateReportsBtn.addEventListener("click", deleteReportsByDate);
+  }
+  if (el.deleteDraftReportsBtn) {
+    el.deleteDraftReportsBtn.addEventListener("click", deleteDraftReports);
+  }
   el.addTodoBtn.addEventListener("click", () => addTodo());
   el.addCompanyWorkerBtn.addEventListener("click", () => addCompanyWorker());
   el.companyNameInput.addEventListener("keydown", (event) => {
@@ -3248,6 +3572,15 @@ function bindEvents() {
   for (const input of entryInputs) {
     input.addEventListener("input", pullInputsToActiveEntry);
     input.addEventListener("change", pullInputsToActiveEntry);
+  }
+
+  if (el.entryDate) {
+    el.entryDate.addEventListener("change", () => {
+      renderEntries();
+      if (el.manageDateDelete) {
+        el.manageDateDelete.value = el.entryDate.value || "";
+      }
+    });
   }
 
   getAutoResizeTextareas().forEach((textarea) => {

@@ -22,6 +22,7 @@
           <p class="subtle">Module zentral verwalten, Berichte formal dokumentieren.</p>
         </div>
         <div class="global-actions">
+          <span id="saveIndicator" class="save-indicator save-indicator-dirty">Noch nicht gespeichert</span>
           <span id="sessionLabel" class="session-label hidden"></span>
           <button id="logoutBtn" class="btn btn-ghost hidden" type="button">Abmelden</button>
         </div>
@@ -189,6 +190,57 @@
                 <button id="newEntryBtn" class="btn btn-ghost">+ Neu</button>
               </div>
               <ul id="entryList" class="entry-list"></ul>
+
+              <div class="report-overview">
+                <p class="section-marker">Dokumentationsübersicht</p>
+                <div class="report-overview-stats">
+                  <div class="report-overview-stat">
+                    <span>Gesamt</span>
+                    <strong id="overviewTotalReports">0</strong>
+                  </div>
+                  <div class="report-overview-stat">
+                    <span>Gespeichert</span>
+                    <strong id="overviewSavedReports">0</strong>
+                  </div>
+                  <div class="report-overview-stat">
+                    <span>Entwürfe</span>
+                    <strong id="overviewDraftReports">0</strong>
+                  </div>
+                </div>
+                <div class="grid-two report-overview-filters">
+                  <div>
+                    <label for="overviewMonthFilter">Monat</label>
+                    <input id="overviewMonthFilter" type="month" />
+                  </div>
+                  <div>
+                    <label>Letzte Speicherung</label>
+                    <p id="overviewLastSaved" class="overview-last-saved">-</p>
+                  </div>
+                </div>
+                <div id="overviewDaysList" class="overview-days-list"></div>
+                <p class="subtle mini">Klick auf ein Datum, um den Bericht direkt zu öffnen.</p>
+              </div>
+
+              <div class="report-manage">
+                <p class="section-marker">Daten verwalten</p>
+                <div class="grid-two report-manage-grid">
+                  <div>
+                    <label for="manageDateDelete">Berichte am Datum löschen</label>
+                    <input id="manageDateDelete" type="date" />
+                  </div>
+                  <div class="report-manage-date-action">
+                    <button id="deleteDateReportsBtn" class="btn btn-danger" type="button">
+                      Datum löschen
+                    </button>
+                  </div>
+                </div>
+                <div class="actions report-manage-actions">
+                  <button id="deleteDraftReportsBtn" class="btn btn-ghost" type="button">
+                    Alle Entwürfe löschen
+                  </button>
+                </div>
+                <p id="manageReportsStatus" class="project-setup-status subtle mini"></p>
+              </div>
             </div>
           </section>
 
@@ -201,7 +253,7 @@
                   <h2>Tagesbericht</h2>
                   <p class="document-subtle">Nachweis der Tätigkeiten, Vorkommnisse und Folgemaßnahmen.</p>
                 </div>
-                <span id="statusBadge" class="badge">Nicht gespeichert</span>
+                <span id="statusBadge" class="badge status-dirty">Noch nicht gespeichert</span>
               </div>
 
               <div class="print-meta-grid">

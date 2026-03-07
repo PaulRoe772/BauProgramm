@@ -77,6 +77,35 @@ body {
   gap: 0.55rem;
 }
 
+.save-indicator {
+  font-size: 0.8rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.3rem 0.62rem;
+  border: 1px solid #c8d3e2;
+  background: #f5f8fc;
+  color: #2b4f74;
+  white-space: nowrap;
+}
+
+.save-indicator-saved {
+  border-color: #b8dbc6;
+  background: #edf8f1;
+  color: #1f5b3a;
+}
+
+.save-indicator-saving {
+  border-color: #c8d3e2;
+  background: #eef3fb;
+  color: #24466d;
+}
+
+.save-indicator-dirty {
+  border-color: #dfd1b4;
+  background: #fdf8ec;
+  color: #70541c;
+}
+
 .session-label {
   font-size: 0.82rem;
   color: #203550;
@@ -502,6 +531,128 @@ textarea {
   margin-top: 0.45rem;
 }
 
+.report-overview,
+.report-manage {
+  margin-top: 0.85rem;
+  padding-top: 0.18rem;
+  border-top: 1px solid #d7deea;
+}
+
+.report-overview-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.report-overview-stat {
+  border: 1px solid #d3dbe7;
+  border-radius: 6px;
+  background: #f9fbfe;
+  padding: 0.34rem 0.42rem;
+}
+
+.report-overview-stat span {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5a6d84;
+}
+
+.report-overview-stat strong {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 1rem;
+  color: #1f3653;
+}
+
+.report-overview-filters {
+  margin-top: 0.45rem;
+}
+
+.overview-last-saved {
+  margin: 0;
+  min-height: 2.2rem;
+  display: flex;
+  align-items: center;
+  border: 1px solid #d3dbe7;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #233d5f;
+  padding: 0.55rem 0.6rem;
+  font-weight: 700;
+}
+
+.overview-days-list {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.overview-days-empty {
+  margin: 0;
+  width: 100%;
+  border: 1px dashed #c9d3e2;
+  border-radius: 6px;
+  background: #f8fbff;
+  color: #5a6d84;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.87rem;
+}
+
+.overview-day-pill {
+  border: 1px solid #ccd6e4;
+  border-radius: 999px;
+  background: #f5f8fc;
+  color: #294769;
+  padding: 0.28rem 0.62rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.overview-day-pill.is-saved {
+  border-color: #b8dbc6;
+  background: #edf8f1;
+  color: #1f5b3a;
+}
+
+.overview-day-pill.is-draft {
+  border-color: #dfd1b4;
+  background: #fdf8ec;
+  color: #70541c;
+}
+
+.overview-day-pill.is-mixed {
+  border-color: #d1d8e4;
+  background: #f3f6fb;
+  color: #264261;
+}
+
+.overview-day-pill.is-active {
+  box-shadow: 0 0 0 2px rgba(41, 71, 105, 0.18);
+}
+
+.report-manage-grid {
+  margin-top: 0.25rem;
+}
+
+.report-manage-date-action {
+  display: flex;
+  align-items: end;
+}
+
+.report-manage-date-action .btn {
+  width: 100%;
+}
+
+.report-manage-actions {
+  margin-top: 0.6rem;
+}
+
 .entry-select {
   width: 100%;
   text-align: left;
@@ -519,6 +670,15 @@ textarea {
   background: var(--accent-soft);
 }
 
+.entry-select.is-saved {
+  border-color: #b8d7c3;
+}
+
+.entry-select.is-draft {
+  border-color: #d8ccb5;
+  background: #fcf8ef;
+}
+
 .badge {
   font-size: 0.74rem;
   font-weight: 700;
@@ -529,6 +689,24 @@ textarea {
   border-radius: 999px;
   padding: 0.2rem 0.52rem;
   white-space: nowrap;
+}
+
+.badge.status-saved {
+  border-color: #b8dbc6;
+  background: #edf8f1;
+  color: #1f5b3a;
+}
+
+.badge.status-saving {
+  border-color: #c8d3e2;
+  background: #eef3fb;
+  color: #24466d;
+}
+
+.badge.status-dirty {
+  border-color: #dfd1b4;
+  background: #fdf8ec;
+  color: #70541c;
 }
 
 .report-card {
@@ -893,6 +1071,10 @@ textarea {
 
   .photo-folder-controls {
     grid-template-columns: 1fr;
+  }
+
+  .report-overview-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .worktimes-summary {
