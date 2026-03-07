@@ -255,6 +255,25 @@ function setCloudBusy(busy) {
   if (el.cloudSyncBtn) el.cloudSyncBtn.disabled = isBusy || !cloud.connected;
 }
 
+function revealCloudCredentials() {
+  cloud.lockCredentials = false;
+  setHidden(el.cloudCredentialsWrap, false);
+}
+
+function getCloudErrorMessage(error, fallback = "") {
+  return String(error?.message || fallback || "").trim();
+}
+
+function isCloudCredentialError(error) {
+  const message = getCloudErrorMessage(error).toLowerCase();
+  if (!message) return false;
+  return (
+    /invalid api key|invalidapikey|api key|apikey/.test(message) ||
+    /jwt/.test(message) ||
+    /unauthorized|forbidden|permission denied/.test(message)
+  );
+}
+
 function ensureCloudClient(config) {
   if (!window.supabase || typeof window.supabase.createClient !== "function") {
     throw new Error("Supabase SDK wurde nicht geladen.");
@@ -482,8 +501,14 @@ async function pushCloudState() {
     if (error) throw error;
     setCloudStatus("Cloud synchronisiert.", "success");
   } catch (error) {
-    const message = String(error?.message || "Synchronisierung fehlgeschlagen.");
-    if (/bucket|storage/i.test(message)) {
+    const message = getCloudErrorMessage(error, "Synchronisierung fehlgeschlagen.");
+    if (isCloudCredentialError(error)) {
+      revealCloudCredentials();
+      setCloudStatus(
+        "Cloud-Fehler: Ungueltiger Supabase API-Key. Bitte den kompletten Publishable/Anon Key eintragen und erneut verbinden.",
+        "error"
+      );
+    } else if (/bucket|storage/i.test(message)) {
       setCloudStatus(
         `Cloud-Fehler: ${message} (Storage-Bucket "${CLOUD_STORAGE_BUCKET}" prüfen).`,
         "error"
@@ -536,7 +561,16 @@ async function loadCloudState() {
     setCloudStatus("Cloud-Daten geladen.", "success");
     return true;
   } catch (error) {
-    setCloudStatus(`Cloud-Fehler: ${error.message || "Laden fehlgeschlagen."}`, "error");
+    const message = getCloudErrorMessage(error, "Laden fehlgeschlagen.");
+    if (isCloudCredentialError(error)) {
+      revealCloudCredentials();
+      setCloudStatus(
+        "Cloud-Fehler: Ungueltiger Supabase API-Key. Bitte den kompletten Publishable/Anon Key eintragen und erneut verbinden.",
+        "error"
+      );
+      return false;
+    }
+    setCloudStatus(`Cloud-Fehler: ${message}`, "error");
     return false;
   } finally {
     setCloudBusy(false);
@@ -566,9 +600,20 @@ async function connectCloud(autoLoad = true) {
     }
     return true;
   } catch (error) {
+    if (isCloudCredentialError(error)) {
+      revealCloudCredentials();
+      setCloudStatus(
+        "Cloud-Verbindung fehlgeschlagen: Ungueltiger Supabase API-Key. Bitte den kompletten Publishable/Anon Key eintragen.",
+        "error"
+      );
+      return false;
+    }
     cloud.client = null;
     cloud.connected = false;
-    setCloudStatus(`Cloud-Verbindung fehlgeschlagen: ${error.message || "Bitte Daten prüfen."}`, "error");
+    setCloudStatus(
+      `Cloud-Verbindung fehlgeschlagen: ${getCloudErrorMessage(error, "Bitte Daten prüfen.")}`,
+      "error"
+    );
     return false;
   } finally {
     setCloudBusy(false);

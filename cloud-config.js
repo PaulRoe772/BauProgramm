@@ -4,6 +4,6 @@ window.BAUTAGEBUCH_CLOUD_CONFIG = window.BAUTAGEBUCH_CLOUD_CONFIG || {
   supabaseUrl: "https://smkhpjtufnrceainvvhx.supabase.co",
   supabaseAnonKey: "sb_publishable_NdkMJLTNNj",
   workspaceKey: "bautagebuch-main",
-  lockCredentials: true,
+  lockCredentials: false,
   autoConnect: true,
 };
