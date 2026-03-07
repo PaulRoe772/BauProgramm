@@ -23,59 +23,8 @@
         </div>
         <div class="global-actions">
           <span id="saveIndicator" class="save-indicator save-indicator-dirty">Noch nicht gespeichert</span>
-          <span id="sessionLabel" class="session-label hidden"></span>
-          <button id="logoutBtn" class="btn btn-ghost hidden" type="button">Abmelden</button>
         </div>
       </header>
-
-      <section id="authView" class="view auth-view">
-        <div class="auth-grid">
-          <article class="card auth-card">
-            <h2>Anmeldung</h2>
-            <p class="subtle mini">Mit bestehendem Konto anmelden.</p>
-            <label for="loginUsername">Benutzername</label>
-            <input id="loginUsername" type="text" autocomplete="username" placeholder="z. B. bauleitung.muster" />
-            <label for="loginPassword">Rollen-Code</label>
-            <input
-              id="loginPassword"
-              type="password"
-              autocomplete="current-password"
-              placeholder="Admin/Bauleitung-Code (Mitarbeiter frei)"
-            />
-            <p class="subtle mini">Admin: HSGDreieich61058 | Bauleitung: Spengler1! | Mitarbeiter: frei</p>
-            <button id="loginBtn" class="btn btn-primary" type="button">Anmelden</button>
-            <p id="authStatus" class="auth-feedback" aria-live="polite"></p>
-          </article>
-
-          <article class="card auth-card">
-            <h2>Neues Konto</h2>
-            <p class="subtle mini">Einfaches lokales Konto auf diesem Gerät erstellen.</p>
-            <label for="registerUsername">Benutzername</label>
-            <input
-              id="registerUsername"
-              type="text"
-              autocomplete="username"
-              placeholder="mindestens 3 Zeichen"
-            />
-            <label for="registerPassword">Rollen-Code</label>
-            <input
-              id="registerPassword"
-              type="password"
-              autocomplete="new-password"
-              placeholder="Code je Rolle"
-            />
-            <label for="registerRole">Rolle</label>
-            <select id="registerRole" aria-label="Benutzerrolle wählen">
-              <option value="bauleitung">Bauleitung</option>
-              <option value="admin">Admin</option>
-              <option value="mitarbeiter">Mitarbeiter</option>
-            </select>
-            <p id="registerCodeHint" class="subtle mini"></p>
-            <button id="registerBtn" class="btn btn-ghost" type="button">Konto erstellen</button>
-            <p id="registerStatus" class="auth-feedback" aria-live="polite"></p>
-          </article>
-        </div>
-      </section>
 
       <section id="menuView" class="view hidden">
         <div class="menu-wrap">

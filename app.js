@@ -1,14 +1,7 @@
 const STORAGE_KEY = "bautagebuch-pro-v1";
-const AUTH_USERS_KEY = "bautagebuch-pro-users-v1";
-const AUTH_SESSION_KEY = "bautagebuch-pro-session-v1";
 const CLOUD_CONFIG_KEY = "bautagebuch-pro-cloud-config-v1";
 const CLOUD_TABLE = "app_state";
 const CLOUD_STORAGE_BUCKET = "bau-files";
-const ROLE_ADMIN = "admin";
-const ROLE_BAULEITUNG = "bauleitung";
-const ROLE_MITARBEITER = "mitarbeiter";
-const ADMIN_ACCESS_CODE = "HSGDreieich61058";
-const BAULEITUNG_ACCESS_CODE = "Spengler1!";
 const DEFAULT_PHOTO_FOLDER_ID = "folder-default";
 const DEFAULT_PHOTO_FOLDER_NAME = "Allgemein";
 const state = {
@@ -608,79 +601,36 @@ function normalizeUserKey(value) {
 }
 
 function normalizeUserRole(value) {
-  const role = String(value || "").toLowerCase();
-  if (role === ROLE_ADMIN || role === ROLE_BAULEITUNG || role === ROLE_MITARBEITER) {
-    return role;
-  }
-  return ROLE_BAULEITUNG;
+  return "admin";
 }
 
 function roleLabel(roleValue) {
-  const role = normalizeUserRole(roleValue);
-  if (role === ROLE_ADMIN) return "Admin";
-  if (role === ROLE_MITARBEITER) return "Mitarbeiter";
-  return "Bauleitung";
-}
-
-function getRoleAccessCode(roleValue) {
-  const role = normalizeUserRole(roleValue);
-  if (role === ROLE_ADMIN) return ADMIN_ACCESS_CODE;
-  if (role === ROLE_BAULEITUNG) return BAULEITUNG_ACCESS_CODE;
-  return "";
-}
-
-function isRoleCodeRequired(roleValue) {
-  return normalizeUserRole(roleValue) !== ROLE_MITARBEITER;
-}
-
-function validateRoleCode(roleValue, inputCode) {
-  const role = normalizeUserRole(roleValue);
-  if (role === ROLE_MITARBEITER) return true;
-  return String(inputCode || "") === getRoleAccessCode(role);
+  return "Team";
 }
 
 function updateRegisterCodeHint() {
-  const role = normalizeUserRole(el.registerRole?.value);
-  if (!el.registerPassword || !el.registerCodeHint) return;
-
-  if (role === ROLE_ADMIN) {
-    el.registerPassword.placeholder = "Admin-Code eingeben";
-    el.registerCodeHint.textContent = `Admin-Code erforderlich: ${ADMIN_ACCESS_CODE}`;
-    return;
-  }
-  if (role === ROLE_BAULEITUNG) {
-    el.registerPassword.placeholder = "Bauleiter-Code eingeben";
-    el.registerCodeHint.textContent = `Bauleiter-Code erforderlich: ${BAULEITUNG_ACCESS_CODE}`;
-    return;
-  }
-
-  el.registerPassword.placeholder = "Für Mitarbeiter optional";
-  el.registerCodeHint.textContent = "Mitarbeiter: frei (Code optional).";
+  // Anmeldung ist deaktiviert.
 }
 
 function isMitarbeiterRole() {
-  const user = getActiveUser();
-  return normalizeUserRole(user?.role) === ROLE_MITARBEITER;
+  return false;
 }
 
 function applyRolePermissions() {
-  const isMitarbeiter = isMitarbeiterRole();
   const projectInputs = [el.projectName, el.siteManager, el.projectNumber];
   for (const input of projectInputs) {
     if (!input) continue;
-    input.readOnly = isMitarbeiter;
-    input.classList.toggle("is-readonly", isMitarbeiter);
+    input.readOnly = false;
+    input.classList.remove("is-readonly");
   }
-  if (el.saveProjectBtn) el.saveProjectBtn.disabled = isMitarbeiter;
-  if (el.newProjectBtn) el.newProjectBtn.disabled = isMitarbeiter;
-  if (el.deleteBtn) el.deleteBtn.disabled = isMitarbeiter;
-  if (el.exportBtn) el.exportBtn.disabled = isMitarbeiter;
+  if (el.saveProjectBtn) el.saveProjectBtn.disabled = false;
+  if (el.newProjectBtn) el.newProjectBtn.disabled = false;
+  if (el.deleteBtn) el.deleteBtn.disabled = false;
+  if (el.exportBtn) el.exportBtn.disabled = false;
 }
 
 function denyForMitarbeiter(message) {
-  if (!isMitarbeiterRole()) return false;
-  alert(message);
-  return true;
+  return false;
 }
 
 function getActiveProject() {
@@ -745,38 +695,25 @@ function updateModuleAccessUi(statusText = "", statusKind = "") {
 }
 
 function persistAuthUsers() {
-  localStorage.setItem(AUTH_USERS_KEY, JSON.stringify(state.auth.users));
+  // Anmeldung ist deaktiviert.
 }
 
 function persistAuthSession() {
-  if (state.auth.activeUserKey) {
-    localStorage.setItem(AUTH_SESSION_KEY, state.auth.activeUserKey);
-  } else {
-    localStorage.removeItem(AUTH_SESSION_KEY);
-  }
+  // Anmeldung ist deaktiviert.
 }
 
 function getActiveUser() {
-  return state.auth.users.find((user) => user.key === state.auth.activeUserKey) || null;
+  return null;
 }
 
 function updateSessionUi() {
-  const user = getActiveUser();
-  if (user) {
-    if (el.sessionLabel) {
-      el.sessionLabel.textContent = `Angemeldet: ${user.name} (${roleLabel(user.role)})`;
-    }
-    setHidden(el.sessionLabel, false);
-    setHidden(el.logoutBtn, false);
-  } else {
-    if (el.sessionLabel) el.sessionLabel.textContent = "";
-    setHidden(el.sessionLabel, true);
-    setHidden(el.logoutBtn, true);
-  }
+  if (el.sessionLabel) el.sessionLabel.textContent = "";
+  setHidden(el.sessionLabel, true);
+  setHidden(el.logoutBtn, true);
 }
 
 function showView(name) {
-  setHidden(el.authView, name !== "auth");
+  setHidden(el.authView, true);
   setHidden(el.menuView, name !== "menu");
   setHidden(el.bautagebuchView, name !== "bautagebuch");
   setHidden(el.photoModuleView, name !== "photo-module");
@@ -786,24 +723,16 @@ function showView(name) {
 }
 
 function showAuthView() {
-  showView("auth");
+  showView("menu");
 }
 
 function showMenuView() {
-  if (!getActiveUser()) {
-    showAuthView();
-    return;
-  }
   showView("menu");
   syncProjectInputs();
   updateModuleAccessUi();
 }
 
 function showBautagebuchView() {
-  if (!getActiveUser()) {
-    showAuthView();
-    return;
-  }
   if (!isProjectConfigured()) {
     showMenuView();
     updateModuleAccessUi("Bitte zuerst eine Baustelle speichern.", "error");
@@ -818,10 +747,6 @@ function showBautagebuchView() {
 }
 
 function showPhotoModuleView() {
-  if (!getActiveUser()) {
-    showAuthView();
-    return;
-  }
   if (!isProjectConfigured()) {
     showMenuView();
     updateModuleAccessUi("Bitte zuerst eine Baustelle speichern.", "error");
@@ -834,10 +759,6 @@ function showPhotoModuleView() {
 }
 
 function showWorkTimesView() {
-  if (!getActiveUser()) {
-    showAuthView();
-    return;
-  }
   if (!isProjectConfigured()) {
     showMenuView();
     updateModuleAccessUi("Bitte zuerst eine Baustelle speichern.", "error");
@@ -858,101 +779,20 @@ function isPhotoModuleVisible() {
 }
 
 function loadAuthState() {
-  let users = [];
-  try {
-    const rawUsers = localStorage.getItem(AUTH_USERS_KEY);
-    const parsedUsers = rawUsers ? JSON.parse(rawUsers) : [];
-    if (Array.isArray(parsedUsers)) {
-      users = parsedUsers
-        .map((item) => ({
-          key: normalizeUserKey(item?.key || item?.name),
-          name: normalizeUserName(item?.name),
-          password: String(item?.password || ""),
-          role: normalizeUserRole(item?.role),
-        }))
-        .filter((item) => item.key && item.name);
-    }
-  } catch (_) {
-    users = [];
-  }
-
-  state.auth.users = users;
-  state.auth.activeUserKey = normalizeUserKey(localStorage.getItem(AUTH_SESSION_KEY) || "");
-  if (!state.auth.users.some((item) => item.key === state.auth.activeUserKey)) {
-    state.auth.activeUserKey = "";
-    persistAuthSession();
-  }
+  state.auth.users = [];
+  state.auth.activeUserKey = "";
 }
 
 function handleLogin() {
-  const username = normalizeUserName(el.loginUsername.value);
-  const password = String(el.loginPassword.value || "");
-  const key = normalizeUserKey(username);
-  const user = state.auth.users.find((entry) => entry.key === key);
-
-  if (!username) {
-    setFeedback(el.authStatus, "Bitte Benutzernamen eingeben.", "error");
-    return;
-  }
-  if (!user) {
-    setFeedback(el.authStatus, "Benutzername nicht gefunden.", "error");
-    return;
-  }
-
-  if (isRoleCodeRequired(user.role) && !password) {
-    setFeedback(el.authStatus, "Bitte Rollen-Code eingeben.", "error");
-    return;
-  }
-  if (!validateRoleCode(user.role, password)) {
-    setFeedback(el.authStatus, "Anmeldung fehlgeschlagen. Bitte Daten prüfen.", "error");
-    return;
-  }
-
-  state.auth.activeUserKey = user.key;
-  persistAuthSession();
-  setFeedback(el.authStatus, "Anmeldung erfolgreich.", "success");
-  setFeedback(el.registerStatus, "");
-  el.loginPassword.value = "";
   showMenuView();
 }
 
 function handleRegister() {
-  const username = normalizeUserName(el.registerUsername.value);
-  const roleCode = String(el.registerPassword.value || "");
-  const role = normalizeUserRole(el.registerRole?.value);
-  const key = normalizeUserKey(username);
-
-  if (username.length < 3) {
-    setFeedback(el.registerStatus, "Benutzername muss mindestens 3 Zeichen haben.", "error");
-    return;
-  }
-  if (state.auth.users.some((user) => user.key === key)) {
-    setFeedback(el.registerStatus, "Benutzername existiert bereits.", "error");
-    return;
-  }
-  if (isRoleCodeRequired(role) && !validateRoleCode(role, roleCode)) {
-    setFeedback(el.registerStatus, "Rollen-Code falsch. Bitte Code prüfen.", "error");
-    return;
-  }
-
-  state.auth.users.push({ key, name: username, password: roleCode, role });
-  persistAuthUsers();
-  state.auth.activeUserKey = key;
-  persistAuthSession();
-  setFeedback(el.registerStatus, "Konto erstellt und angemeldet.", "success");
-  setFeedback(el.authStatus, "");
-  el.registerUsername.value = "";
-  el.registerPassword.value = "";
-  if (el.registerRole) el.registerRole.value = ROLE_BAULEITUNG;
   showMenuView();
 }
 
 function handleLogout() {
-  state.auth.activeUserKey = "";
-  persistAuthSession();
-  setFeedback(el.authStatus, "");
-  setFeedback(el.registerStatus, "");
-  showAuthView();
+  showMenuView();
 }
 
 function getAutoResizeTextareas() {
@@ -3832,8 +3672,6 @@ function init() {
   loadAuthState();
   loadState();
   ensureProjectMediaState();
-  if (el.registerRole) el.registerRole.value = ROLE_BAULEITUNG;
-  updateRegisterCodeHint();
   const savedCloudConfig = loadCloudConfig();
   applyCloudUiMode(savedCloudConfig);
   applyCloudInputs(savedCloudConfig);
@@ -3849,11 +3687,7 @@ function init() {
   onSignatureCanvasResize();
   autoResizeAllTextareas();
   void autoConnectCloudIfConfigured();
-  if (getActiveUser()) {
-    showMenuView();
-  } else {
-    showAuthView();
-  }
+  showMenuView();
 }
 
 init();
