@@ -553,14 +553,35 @@ async function loadCloudState() {
       return false;
     }
 
+    const previousState = {
+      projects: state.projects,
+      activeProjectId: state.activeProjectId,
+    };
     const applied = applyCloudPayload(data.data);
     if (!applied) {
+      state.projects = previousState.projects;
+      state.activeProjectId = previousState.activeProjectId;
+      ensureActiveProjectId();
+      refreshUiFromState();
       setCloudStatus("Cloud-Datenformat ungültig.", "error");
+      return false;
+    }
+    if (!state.projects.length) {
+      state.projects = previousState.projects;
+      state.activeProjectId = previousState.activeProjectId;
+      ensureActiveProjectId();
+      refreshUiFromState();
+      setCloudStatus(
+        `Cloud geladen, aber keine Baustelle gefunden (Schlüssel: ${cloud.workspaceKey}). Bitte Cloud-Projekt-Schlüssel prüfen.`,
+        "error"
+      );
       return false;
     }
     persist(true);
     refreshUiFromState();
-    setCloudStatus("Cloud-Daten geladen.", "success");
+    const count = state.projects.length;
+    const projectLabel = count === 1 ? "Baustelle" : "Baustellen";
+    setCloudStatus(`Cloud-Daten geladen (${count} ${projectLabel}).`, "success");
     return true;
   } catch (error) {
     const message = getCloudErrorMessage(error, "Laden fehlgeschlagen.");
@@ -710,8 +731,8 @@ function getActiveProject() {
 
 function ensureActiveProjectId() {
   if (!state.projects.length) {
-    state.activeProjectId = "";
-    return null;
+    createInitialProject();
+    return getActiveProject();
   }
   const hasActive = state.projects.some((project) => project.id === state.activeProjectId);
   if (!hasActive) {
@@ -725,18 +746,30 @@ function isProjectConfigured() {
   return normalizeUserName(project?.name).length > 0;
 }
 
+function getProjectDisplayName(project, fallback = "Unbenannte Baustelle") {
+  if (!project) return "";
+  const name = normalizeUserName(project?.name);
+  return name || fallback;
+}
+
 function updatePhotoModuleBadge() {
   if (!el.photoModuleProjectBadge) return;
   const project = ensureActiveProjectId();
-  const name = normalizeUserName(project?.name);
-  el.photoModuleProjectBadge.textContent = name ? `Baustelle: ${name}` : "Keine Baustelle";
+  if (!project) {
+    el.photoModuleProjectBadge.textContent = "Keine Baustelle";
+    return;
+  }
+  el.photoModuleProjectBadge.textContent = `Baustelle: ${getProjectDisplayName(project)}`;
 }
 
 function updateWorkTimesBadge() {
   if (!el.workTimesProjectBadge) return;
   const project = ensureActiveProjectId();
-  const name = normalizeUserName(project?.name);
-  el.workTimesProjectBadge.textContent = name ? `Baustelle: ${name}` : "Keine Baustelle";
+  if (!project) {
+    el.workTimesProjectBadge.textContent = "Keine Baustelle";
+    return;
+  }
+  el.workTimesProjectBadge.textContent = `Baustelle: ${getProjectDisplayName(project)}`;
 }
 
 function updateModuleAccessUi(statusText = "", statusKind = "") {
