@@ -1845,17 +1845,52 @@ function exportActivePhotoFolderPdf() {
   const projectManager = normalizeUserName(project.manager) || "-";
   const generatedAt = new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
 
-  const photoItems = resolvedPhotos
-    .map(
-      (photo, index) => `
-        <figure class="photo-item">
-          <div class="photo-frame">
-            <img src="${escapeHtml(photo.source)}" alt="${escapeHtml(photo.name || `Foto ${index + 1}`)}" />
-          </div>
-          <figcaption>${escapeHtml(photo.name || `Foto ${index + 1}`)}</figcaption>
-        </figure>
-      `
-    )
+  const photosPerPage = 6;
+  const pageChunks = [];
+  for (let index = 0; index < resolvedPhotos.length; index += photosPerPage) {
+    pageChunks.push(resolvedPhotos.slice(index, index + photosPerPage));
+  }
+  const totalPages = pageChunks.length;
+
+  const pagesHtml = pageChunks
+    .map((chunk, pageIndex) => {
+      const imageOffset = pageIndex * photosPerPage;
+      const photoItems = chunk
+        .map(
+          (photo, index) => `
+            <figure class="photo-item">
+              <div class="photo-frame">
+                <img src="${escapeHtml(photo.source)}" alt="${escapeHtml(photo.name || `Foto ${imageOffset + index + 1}`)}" />
+              </div>
+              <figcaption>${escapeHtml(photo.name || `Foto ${imageOffset + index + 1}`)}</figcaption>
+            </figure>
+          `
+        )
+        .join("");
+
+      const rangeStart = imageOffset + 1;
+      const rangeEnd = imageOffset + chunk.length;
+      return `
+        <main class="page">
+          <header class="head">
+            <p class="head-title">Fotoanhang Ordner: ${escapeHtml(folderName)}</p>
+            <p class="head-meta">
+              Baustelle: ${escapeHtml(projectName)} | Projekt-Nr.: ${escapeHtml(projectNumber)} |
+              Bauleitung: ${escapeHtml(projectManager)} | Erstellt: ${escapeHtml(generatedAt)}
+            </p>
+          </header>
+
+          <section class="photo-grid">
+            ${photoItems}
+          </section>
+
+          <p class="footer">
+            Seite ${escapeHtml(String(pageIndex + 1))} / ${escapeHtml(String(totalPages))} - Bilder
+            ${escapeHtml(String(rangeStart))}-${escapeHtml(String(rangeEnd))}
+          </p>
+        </main>
+      `;
+    })
     .join("");
 
   const docHtml = `<!doctype html>
@@ -1865,60 +1900,60 @@ function exportActivePhotoFolderPdf() {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fotoordner - ${escapeHtml(projectName)} - ${escapeHtml(folderName)}</title>
     <style>
-      @page { size: A4 portrait; margin: 12mm; }
+      @page { size: A4 portrait; margin: 10mm; }
       * { box-sizing: border-box; }
       body { margin: 0; font-family: "Source Sans 3", Arial, sans-serif; color: #152338; background: #fff; }
       .page { width: 100%; }
-      .head { border-bottom: 1px solid #c8d1df; padding-bottom: 10px; margin-bottom: 12px; }
-      .kicker { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #2f4f75; font-weight: 700; }
-      h1 { margin: 4px 0 2px; font-size: 22px; font-family: Merriweather, Georgia, serif; }
-      .meta { margin-top: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-      .meta div { border: 1px solid #cfd6e2; padding: 6px 8px; font-size: 12px; }
-      .meta strong { display: block; font-size: 13px; color: #1a2d45; margin-top: 2px; }
-      .photo-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-      .photo-item { margin: 0; border: 1px solid #d4dbe7; padding: 8px; break-inside: avoid; page-break-inside: avoid; }
+      .page + .page { break-before: page; page-break-before: always; }
+      .head { border-bottom: 1px solid #c8d1df; padding-bottom: 3mm; margin-bottom: 3mm; }
+      .head-title { margin: 0; font-size: 14px; font-weight: 700; font-family: Merriweather, Georgia, serif; }
+      .head-meta { margin: 1.5mm 0 0; font-size: 10px; color: #3f536d; line-height: 1.25; }
+      .photo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4mm; }
+      .photo-item {
+        margin: 0;
+        border: 1px solid #d4dbe7;
+        padding: 2.2mm;
+        height: 82mm;
+        display: flex;
+        flex-direction: column;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
       .photo-frame {
         border: 1px solid #dde3ec;
         background: #f8fafc;
-        min-height: 120px;
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 6px;
+        padding: 1.5mm;
+        flex: 1 1 auto;
+        min-height: 0;
       }
       .photo-item img {
         display: block;
         width: auto;
         height: auto;
         max-width: 100%;
-        max-height: 240mm;
+        max-height: 100%;
         object-fit: contain;
       }
-      .photo-item figcaption { margin-top: 6px; font-size: 11px; color: #3f536d; word-break: break-word; }
-      .footer { margin-top: 10px; font-size: 11px; color: #4f6077; }
+      .photo-item figcaption {
+        margin-top: 1.5mm;
+        font-size: 10px;
+        color: #3f536d;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .footer { margin: 2.5mm 0 0; font-size: 10px; color: #4f6077; text-align: right; }
       @media print {
         .photo-item { break-inside: avoid; page-break-inside: avoid; }
       }
     </style>
   </head>
   <body>
-    <main class="page">
-      <header class="head">
-        <p class="kicker">Baudokumentation - Fotoordner</p>
-        <h1>Fotoanhang Ordner: ${escapeHtml(folderName)}</h1>
-        <div class="meta">
-          <div>Baustelle<strong>${escapeHtml(projectName)}</strong></div>
-          <div>Projekt-Nr.<strong>${escapeHtml(projectNumber)}</strong></div>
-          <div>Bauleitung<strong>${escapeHtml(projectManager)}</strong></div>
-          <div>Erstellt am<strong>${escapeHtml(generatedAt)}</strong></div>
-        </div>
-      </header>
-
-      <section class="photo-grid">
-        ${photoItems}
-      </section>
-      <p class="footer">Bilder gesamt: ${escapeHtml(String(resolvedPhotos.length))}</p>
-    </main>
+    ${pagesHtml}
     <script>
       window.addEventListener("load", function () {
         setTimeout(function () { window.print(); }, 220);
