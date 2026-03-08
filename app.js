@@ -1900,20 +1900,20 @@ function exportActivePhotoFolderPdf() {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fotoordner - ${escapeHtml(projectName)} - ${escapeHtml(folderName)}</title>
     <style>
-      @page { size: A4 portrait; margin: 10mm; }
+      @page { size: A4 portrait; margin: 9mm; }
       * { box-sizing: border-box; }
       body { margin: 0; font-family: "Source Sans 3", Arial, sans-serif; color: #152338; background: #fff; }
       .page { width: 100%; }
       .page + .page { break-before: page; page-break-before: always; }
-      .head { border-bottom: 1px solid #c8d1df; padding-bottom: 3mm; margin-bottom: 3mm; }
-      .head-title { margin: 0; font-size: 14px; font-weight: 700; font-family: Merriweather, Georgia, serif; }
-      .head-meta { margin: 1.5mm 0 0; font-size: 10px; color: #3f536d; line-height: 1.25; }
-      .photo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4mm; }
+      .head { border-bottom: 1px solid #c8d1df; padding-bottom: 2mm; margin-bottom: 2.2mm; }
+      .head-title { margin: 0; font-size: 12px; font-weight: 700; font-family: Merriweather, Georgia, serif; }
+      .head-meta { margin: 1mm 0 0; font-size: 9px; color: #3f536d; line-height: 1.2; }
+      .photo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3mm; }
       .photo-item {
         margin: 0;
         border: 1px solid #d4dbe7;
-        padding: 2.2mm;
-        height: 79mm;
+        padding: 1.8mm;
+        height: 72mm;
         display: flex;
         flex-direction: column;
         break-inside: avoid;
@@ -1925,7 +1925,7 @@ function exportActivePhotoFolderPdf() {
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 1.5mm;
+        padding: 1.2mm;
         flex: 1 1 auto;
         min-height: 0;
       }
@@ -1938,15 +1938,15 @@ function exportActivePhotoFolderPdf() {
         object-fit: contain;
       }
       .photo-item figcaption {
-        margin-top: 1.5mm;
-        font-size: 10px;
+        margin-top: 1mm;
+        font-size: 9px;
         color: #3f536d;
         line-height: 1.2;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      .footer { margin: 2.5mm 0 0; font-size: 10px; color: #4f6077; text-align: right; }
+      .footer { margin: 1.8mm 0 0; font-size: 9px; color: #4f6077; text-align: right; }
       @media print {
         .photo-item { break-inside: avoid; page-break-inside: avoid; }
       }
