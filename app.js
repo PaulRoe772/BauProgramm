@@ -1,5 +1,6 @@
 const STORAGE_KEY = "bautagebuch-pro-v1";
 const CLOUD_CONFIG_KEY = "bautagebuch-pro-cloud-config-v1";
+const CLOUD_SYNC_META_KEY = "bautagebuch-pro-cloud-sync-meta-v1";
 const CLOUD_TABLE = "app_state";
 const CLOUD_STORAGE_BUCKET = "bau-files";
 const DEFAULT_PHOTO_FOLDER_ID = "folder-default";
@@ -248,6 +249,43 @@ function saveCloudConfig(config) {
     workspaceKey: normalizeWorkspaceKey(config?.workspaceKey || ""),
   };
   localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(payload));
+}
+
+function loadCloudSyncMeta() {
+  try {
+    const raw = localStorage.getItem(CLOUD_SYNC_META_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    cloud.pendingLocalChanges = Boolean(parsed?.pendingLocalChanges);
+    cloud.lastLocalChangeAt = Number.isFinite(Number(parsed?.lastLocalChangeAt))
+      ? Number(parsed.lastLocalChangeAt)
+      : 0;
+    cloud.lastCloudPullAt = Number.isFinite(Number(parsed?.lastCloudPullAt))
+      ? Number(parsed.lastCloudPullAt)
+      : 0;
+    cloud.lastCloudPushAt = Number.isFinite(Number(parsed?.lastCloudPushAt))
+      ? Number(parsed.lastCloudPushAt)
+      : 0;
+  } catch (_) {
+    cloud.pendingLocalChanges = false;
+    cloud.lastLocalChangeAt = 0;
+    cloud.lastCloudPullAt = 0;
+    cloud.lastCloudPushAt = 0;
+  }
+}
+
+function saveCloudSyncMeta() {
+  const payload = {
+    pendingLocalChanges: Boolean(cloud.pendingLocalChanges),
+    lastLocalChangeAt: Number(cloud.lastLocalChangeAt) || 0,
+    lastCloudPullAt: Number(cloud.lastCloudPullAt) || 0,
+    lastCloudPushAt: Number(cloud.lastCloudPushAt) || 0,
+  };
+  try {
+    localStorage.setItem(CLOUD_SYNC_META_KEY, JSON.stringify(payload));
+  } catch (_) {
+    // Ignore storage errors for sync meta.
+  }
 }
 
 function setCloudStatus(text = "", kind = "") {
@@ -507,6 +545,7 @@ async function pushCloudState() {
     if (error) throw error;
     cloud.pendingLocalChanges = false;
     cloud.lastCloudPushAt = Date.now();
+    saveCloudSyncMeta();
     setCloudStatus("Cloud synchronisiert.", "success");
   } catch (error) {
     const message = getCloudErrorMessage(error, "Synchronisierung fehlgeschlagen.");
@@ -587,6 +626,7 @@ async function loadCloudState() {
     refreshUiFromState();
     cloud.pendingLocalChanges = false;
     cloud.lastCloudPullAt = Date.now();
+    saveCloudSyncMeta();
     const count = state.projects.length;
     const projectLabel = count === 1 ? "Baustelle" : "Baustellen";
     setCloudStatus(`Cloud-Daten geladen (${count} ${projectLabel}).`, "success");
@@ -628,7 +668,11 @@ async function connectCloud(autoLoad = true) {
     setCloudStatus("Cloud verbunden.", "success");
     if (autoLoad) {
       if (cloud.pendingLocalChanges) {
-        await pushCloudState();
+        setCloudStatus(
+          "Lokale Änderungen vorhanden. 'Jetzt synchronisieren' zum Hochladen oder 'Cloud laden' zum Überschreiben nutzen.",
+          "error"
+        );
+        return true;
       }
       await loadCloudState();
     }
@@ -690,9 +734,11 @@ async function syncCloudOnAppWake(force = false) {
       if (!ok) return;
     }
     if (cloud.pendingLocalChanges) {
-      setCloudBusy(true);
-      await pushCloudState();
-      if (cloud.pendingLocalChanges) return;
+      setCloudStatus(
+        "Lokale Änderungen vorhanden. 'Jetzt synchronisieren' zum Hochladen oder 'Cloud laden' zum Überschreiben nutzen.",
+        "error"
+      );
+      return;
     }
     await loadCloudState();
   } finally {
@@ -1249,6 +1295,7 @@ function persist(localOnly = false) {
   if (!localOnly) {
     cloud.pendingLocalChanges = true;
     cloud.lastLocalChangeAt = Date.now();
+    saveCloudSyncMeta();
     scheduleCloudSync();
   }
   if (!autoSaveDraft.timer) {
@@ -3660,11 +3707,6 @@ function bindEvents() {
   }
   if (el.cloudLoadBtn) {
     el.cloudLoadBtn.addEventListener("click", async () => {
-      if (cloud.pendingLocalChanges) {
-        setCloudBusy(true);
-        await pushCloudState();
-        if (cloud.pendingLocalChanges) return;
-      }
       await loadCloudState();
     });
   }
@@ -3933,6 +3975,7 @@ function bindEvents() {
 function init() {
   loadAuthState();
   loadState();
+  loadCloudSyncMeta();
   ensureProjectMediaState();
   const savedCloudConfig = loadCloudConfig();
   applyCloudUiMode(savedCloudConfig);
