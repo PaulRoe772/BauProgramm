@@ -1151,11 +1151,33 @@ function loadState() {
 }
 
 function persist(localOnly = false) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  let localSaved = true;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    localSaved = false;
+    const message = getCloudErrorMessage(error, "Lokales Speichern fehlgeschlagen.");
+    const isQuotaError =
+      error?.name === "QuotaExceededError" ||
+      /quota|exceeded|storage|space/i.test(message);
+    if (isQuotaError) {
+      setCloudStatus(
+        "Lokaler Speicher voll: Fotos werden nicht komplett lokal gespeichert. Bitte Cloud-Sync nutzen oder Fotos reduzieren.",
+        "error"
+      );
+      setSaveIndicator("dirty", "Speicher voll");
+    } else {
+      setCloudStatus(`Lokaler Speicherfehler: ${message}`, "error");
+      setSaveIndicator("dirty", "Nicht gespeichert");
+    }
+  }
   if (!localOnly) scheduleCloudSync();
   if (!autoSaveDraft.timer) {
-    setSaveIndicator("saved", "Änderungen gespeichert");
+    if (localSaved) {
+      setSaveIndicator("saved", "Änderungen gespeichert");
+    }
   }
+  return localSaved;
 }
 
 function getActiveEntry() {
@@ -2576,18 +2598,29 @@ async function handleEntryPhotos(event) {
 
 async function appendEntryPhotoFiles(files) {
   if (!files.length) return;
+  const project = ensureActiveProjectId();
+  if (!project) return;
   const entry = getActiveEntry();
   if (!entry) return;
   if (!Array.isArray(entry.photos)) entry.photos = [];
+  const projectId = sanitizeStorageSegment(project.id, "project");
+  const entryId = sanitizeStorageSegment(entry.id, "entry");
 
   for (const file of files) {
     if (!file.type.startsWith("image/")) continue;
-    const dataUrl = await toDataUrl(file);
+    const dataUrl = await toOptimizedPhotoDataUrl(file);
+    const photoId = uid();
+    let cloudPath = "";
+    if (cloud.connected && cloud.client && cloud.workspaceKey) {
+      const ext = getDataUrlFileExtension(dataUrl);
+      const targetPath = `${cloud.workspaceKey}/projects/${projectId}/entries/${entryId}/photos/${photoId}.${ext}`;
+      cloudPath = await tryUploadPhotoDataUrl(dataUrl, targetPath);
+    }
     entry.photos.push({
-      id: uid(),
+      id: photoId,
       name: file.name,
-      dataUrl,
-      cloudPath: "",
+      dataUrl: cloudPath ? "" : dataUrl,
+      cloudPath,
     });
   }
 
@@ -2602,15 +2635,24 @@ async function appendPhotoFiles(files) {
   if (!project) return;
   ensureProjectMediaState(project);
   const activeFolderId = project.activePhotoFolderId || DEFAULT_PHOTO_FOLDER_ID;
+  const projectId = sanitizeStorageSegment(project.id, "project");
+  const folderId = sanitizeStorageSegment(activeFolderId, DEFAULT_PHOTO_FOLDER_ID);
 
   for (const file of files) {
     if (!file.type.startsWith("image/")) continue;
-    const dataUrl = await toDataUrl(file);
+    const dataUrl = await toOptimizedPhotoDataUrl(file);
+    const photoId = uid();
+    let cloudPath = "";
+    if (cloud.connected && cloud.client && cloud.workspaceKey) {
+      const ext = getDataUrlFileExtension(dataUrl);
+      const targetPath = `${cloud.workspaceKey}/projects/${projectId}/folders/${folderId}/${photoId}.${ext}`;
+      cloudPath = await tryUploadPhotoDataUrl(dataUrl, targetPath);
+    }
     project.photos.push({
-      id: uid(),
+      id: photoId,
       name: file.name,
-      dataUrl,
-      cloudPath: "",
+      dataUrl: cloudPath ? "" : dataUrl,
+      cloudPath,
       folderId: activeFolderId,
     });
   }
@@ -2628,6 +2670,56 @@ function toDataUrl(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Bild konnte nicht gelesen werden."));
+    image.src = dataUrl;
+  });
+}
+
+async function toOptimizedPhotoDataUrl(file) {
+  const originalDataUrl = await toDataUrl(file);
+  try {
+    const image = await loadImageFromDataUrl(originalDataUrl);
+    const width = Number(image.naturalWidth || image.width || 0);
+    const height = Number(image.naturalHeight || image.height || 0);
+    if (!width || !height) return originalDataUrl;
+
+    const maxEdge = 1800;
+    const scale = Math.min(1, maxEdge / Math.max(width, height));
+    const shouldReencode = scale < 1 || Number(file?.size || 0) > 900 * 1024;
+    if (!shouldReencode) return originalDataUrl;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return originalDataUrl;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    const optimizedDataUrl = canvas.toDataURL("image/jpeg", 0.82);
+    if (!optimizedDataUrl || optimizedDataUrl.length >= originalDataUrl.length) {
+      return originalDataUrl;
+    }
+    return optimizedDataUrl;
+  } catch (_) {
+    return originalDataUrl;
+  }
+}
+
+async function tryUploadPhotoDataUrl(dataUrl, path) {
+  try {
+    return await uploadDataUrlToCloud(dataUrl, path);
+  } catch (error) {
+    setCloudStatus(`Cloud-Fehler: ${getCloudErrorMessage(error, "Foto-Upload fehlgeschlagen.")}`, "error");
+    return "";
+  }
 }
 
 function getSignatureCanvasSize(canvas) {
