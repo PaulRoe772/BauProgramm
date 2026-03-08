@@ -99,6 +99,8 @@ const el = {
   photoFolderSelect: document.getElementById("photoFolderSelect"),
   photoInput: document.getElementById("photoInput"),
   cameraInput: document.getElementById("cameraInput"),
+  exportPhotoFolderPdfBtn: document.getElementById("exportPhotoFolderPdfBtn"),
+  photoFolderPdfStatus: document.getElementById("photoFolderPdfStatus"),
   photoGrid: document.getElementById("photoGrid"),
   workTimeDate: document.getElementById("workTimeDate"),
   workTimeStart: document.getElementById("workTimeStart"),
@@ -1648,6 +1650,7 @@ function renderEntryPhotos(entry) {
 
 function renderPhotos() {
   if (!el.photoGrid) return;
+  setPhotoFolderPdfStatus("");
   const project = ensureActiveProjectId();
   if (!project) {
     el.photoGrid.innerHTML = "";
@@ -1801,6 +1804,124 @@ function deleteActivePhotoFolder() {
   renderPhotos();
   persist();
   updateStatus("Ungespeichert");
+}
+
+function setPhotoFolderPdfStatus(text = "", kind = "") {
+  setFeedback(el.photoFolderPdfStatus, text, kind);
+}
+
+function exportActivePhotoFolderPdf() {
+  const project = ensureActiveProjectId();
+  if (!project) {
+    setPhotoFolderPdfStatus("Keine aktive Baustelle gefunden.", "error");
+    return;
+  }
+  ensureProjectMediaState(project);
+
+  const folderId = project.activePhotoFolderId || DEFAULT_PHOTO_FOLDER_ID;
+  const folder = project.photoFolders.find((item) => item.id === folderId) || null;
+  const folderName = normalizeUserName(folder?.name || DEFAULT_PHOTO_FOLDER_NAME) || DEFAULT_PHOTO_FOLDER_NAME;
+  const allFolderPhotos = Array.isArray(project.photos)
+    ? project.photos.filter((photo) => photo.folderId === folderId)
+    : [];
+  const resolvedPhotos = allFolderPhotos
+    .map((photo) => ({
+      name: String(photo?.name || "Baufoto"),
+      source: resolvePhotoSource(photo),
+    }))
+    .filter((photo) => String(photo.source || "").trim());
+
+  if (!allFolderPhotos.length) {
+    setPhotoFolderPdfStatus("Im ausgewählten Ordner sind keine Bilder vorhanden.", "error");
+    return;
+  }
+  if (!resolvedPhotos.length) {
+    setPhotoFolderPdfStatus("Bilder nicht verfügbar. Bitte Cloud verbinden und erneut versuchen.", "error");
+    return;
+  }
+
+  const projectName = normalizeUserName(project.name) || "-";
+  const projectNumber = normalizeUserName(project.number) || "-";
+  const projectManager = normalizeUserName(project.manager) || "-";
+  const generatedAt = new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+
+  const photoItems = resolvedPhotos
+    .map(
+      (photo, index) => `
+        <figure class="photo-item">
+          <img src="${escapeHtml(photo.source)}" alt="${escapeHtml(photo.name || `Foto ${index + 1}`)}" />
+          <figcaption>${escapeHtml(photo.name || `Foto ${index + 1}`)}</figcaption>
+        </figure>
+      `
+    )
+    .join("");
+
+  const docHtml = `<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fotoordner - ${escapeHtml(projectName)} - ${escapeHtml(folderName)}</title>
+    <style>
+      @page { size: A4 portrait; margin: 12mm; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: "Source Sans 3", Arial, sans-serif; color: #152338; background: #fff; }
+      .page { width: 100%; }
+      .head { border-bottom: 1px solid #c8d1df; padding-bottom: 10px; margin-bottom: 12px; }
+      .kicker { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #2f4f75; font-weight: 700; }
+      h1 { margin: 4px 0 2px; font-size: 22px; font-family: Merriweather, Georgia, serif; }
+      .meta { margin-top: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+      .meta div { border: 1px solid #cfd6e2; padding: 6px 8px; font-size: 12px; }
+      .meta strong { display: block; font-size: 13px; color: #1a2d45; margin-top: 2px; }
+      .photo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .photo-item { margin: 0; border: 1px solid #d4dbe7; padding: 8px; break-inside: avoid; page-break-inside: avoid; }
+      .photo-item img { width: 100%; max-height: 250px; object-fit: cover; display: block; border: 1px solid #dde3ec; }
+      .photo-item figcaption { margin-top: 6px; font-size: 11px; color: #3f536d; word-break: break-word; }
+      .footer { margin-top: 10px; font-size: 11px; color: #4f6077; }
+      @media print {
+        .photo-item { break-inside: avoid; page-break-inside: avoid; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="head">
+        <p class="kicker">Baudokumentation - Fotoordner</p>
+        <h1>Fotoanhang Ordner: ${escapeHtml(folderName)}</h1>
+        <div class="meta">
+          <div>Baustelle<strong>${escapeHtml(projectName)}</strong></div>
+          <div>Projekt-Nr.<strong>${escapeHtml(projectNumber)}</strong></div>
+          <div>Bauleitung<strong>${escapeHtml(projectManager)}</strong></div>
+          <div>Erstellt am<strong>${escapeHtml(generatedAt)}</strong></div>
+        </div>
+      </header>
+
+      <section class="photo-grid">
+        ${photoItems}
+      </section>
+      <p class="footer">Bilder gesamt: ${escapeHtml(String(resolvedPhotos.length))}</p>
+    </main>
+    <script>
+      window.addEventListener("load", function () {
+        setTimeout(function () { window.print(); }, 220);
+      });
+    </script>
+  </body>
+</html>`;
+
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    setPhotoFolderPdfStatus("Pop-up blockiert. Bitte Pop-ups erlauben und erneut klicken.", "error");
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(docHtml);
+  printWindow.document.close();
+  printWindow.focus();
+  setPhotoFolderPdfStatus(
+    "PDF-Ansicht geöffnet. Im Druckdialog 'Als PDF speichern' auswählen.",
+    "success"
+  );
 }
 
 function setWorkTimeStatus(text = "", kind = "") {
@@ -3807,6 +3928,9 @@ function bindEvents() {
   }
   if (el.deletePhotoFolderBtn) {
     el.deletePhotoFolderBtn.addEventListener("click", deleteActivePhotoFolder);
+  }
+  if (el.exportPhotoFolderPdfBtn) {
+    el.exportPhotoFolderPdfBtn.addEventListener("click", exportActivePhotoFolderPdf);
   }
   if (el.addWorkTimeBtn) {
     el.addWorkTimeBtn.addEventListener("click", addWorkTimeEntry);
