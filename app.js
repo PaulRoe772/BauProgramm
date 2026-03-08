@@ -1913,7 +1913,7 @@ function exportActivePhotoFolderPdf() {
         margin: 0;
         border: 1px solid #d4dbe7;
         padding: 2.2mm;
-        height: 82mm;
+        height: 79mm;
         display: flex;
         flex-direction: column;
         break-inside: avoid;
