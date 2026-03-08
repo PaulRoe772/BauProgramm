@@ -1849,7 +1849,9 @@ function exportActivePhotoFolderPdf() {
     .map(
       (photo, index) => `
         <figure class="photo-item">
-          <img src="${escapeHtml(photo.source)}" alt="${escapeHtml(photo.name || `Foto ${index + 1}`)}" />
+          <div class="photo-frame">
+            <img src="${escapeHtml(photo.source)}" alt="${escapeHtml(photo.name || `Foto ${index + 1}`)}" />
+          </div>
           <figcaption>${escapeHtml(photo.name || `Foto ${index + 1}`)}</figcaption>
         </figure>
       `
@@ -1873,9 +1875,25 @@ function exportActivePhotoFolderPdf() {
       .meta { margin-top: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
       .meta div { border: 1px solid #cfd6e2; padding: 6px 8px; font-size: 12px; }
       .meta strong { display: block; font-size: 13px; color: #1a2d45; margin-top: 2px; }
-      .photo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .photo-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
       .photo-item { margin: 0; border: 1px solid #d4dbe7; padding: 8px; break-inside: avoid; page-break-inside: avoid; }
-      .photo-item img { width: 100%; max-height: 250px; object-fit: cover; display: block; border: 1px solid #dde3ec; }
+      .photo-frame {
+        border: 1px solid #dde3ec;
+        background: #f8fafc;
+        min-height: 120px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px;
+      }
+      .photo-item img {
+        display: block;
+        width: auto;
+        height: auto;
+        max-width: 100%;
+        max-height: 240mm;
+        object-fit: contain;
+      }
       .photo-item figcaption { margin-top: 6px; font-size: 11px; color: #3f536d; word-break: break-word; }
       .footer { margin-top: 10px; font-size: 11px; color: #4f6077; }
       @media print {
