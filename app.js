@@ -144,6 +144,10 @@ const cloud = {
   syncing: false,
   wakeSyncInFlight: false,
   wakeSyncAt: 0,
+  pendingLocalChanges: false,
+  lastLocalChangeAt: 0,
+  lastCloudPullAt: 0,
+  lastCloudPushAt: 0,
 };
 
 const autoSaveDraft = {
@@ -501,6 +505,8 @@ async function pushCloudState() {
       { onConflict: "workspace_key" }
     );
     if (error) throw error;
+    cloud.pendingLocalChanges = false;
+    cloud.lastCloudPushAt = Date.now();
     setCloudStatus("Cloud synchronisiert.", "success");
   } catch (error) {
     const message = getCloudErrorMessage(error, "Synchronisierung fehlgeschlagen.");
@@ -579,6 +585,8 @@ async function loadCloudState() {
     }
     persist(true);
     refreshUiFromState();
+    cloud.pendingLocalChanges = false;
+    cloud.lastCloudPullAt = Date.now();
     const count = state.projects.length;
     const projectLabel = count === 1 ? "Baustelle" : "Baustellen";
     setCloudStatus(`Cloud-Daten geladen (${count} ${projectLabel}).`, "success");
@@ -619,6 +627,9 @@ async function connectCloud(autoLoad = true) {
     applyCloudInputs(config);
     setCloudStatus("Cloud verbunden.", "success");
     if (autoLoad) {
+      if (cloud.pendingLocalChanges) {
+        await pushCloudState();
+      }
       await loadCloudState();
     }
     return true;
@@ -677,6 +688,11 @@ async function syncCloudOnAppWake(force = false) {
     if (!cloud.connected) {
       const ok = await connectCloud(false);
       if (!ok) return;
+    }
+    if (cloud.pendingLocalChanges) {
+      setCloudBusy(true);
+      await pushCloudState();
+      if (cloud.pendingLocalChanges) return;
     }
     await loadCloudState();
   } finally {
@@ -1230,7 +1246,11 @@ function persist(localOnly = false) {
       setSaveIndicator("dirty", "Nicht gespeichert");
     }
   }
-  if (!localOnly) scheduleCloudSync();
+  if (!localOnly) {
+    cloud.pendingLocalChanges = true;
+    cloud.lastLocalChangeAt = Date.now();
+    scheduleCloudSync();
+  }
   if (!autoSaveDraft.timer) {
     if (localSaved) {
       setSaveIndicator("saved", "Änderungen gespeichert");
@@ -3640,6 +3660,11 @@ function bindEvents() {
   }
   if (el.cloudLoadBtn) {
     el.cloudLoadBtn.addEventListener("click", async () => {
+      if (cloud.pendingLocalChanges) {
+        setCloudBusy(true);
+        await pushCloudState();
+        if (cloud.pendingLocalChanges) return;
+      }
       await loadCloudState();
     });
   }
