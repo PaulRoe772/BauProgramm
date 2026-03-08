@@ -142,6 +142,8 @@ const cloud = {
   autoConnect: true,
   syncTimer: null,
   syncing: false,
+  wakeSyncInFlight: false,
+  wakeSyncAt: 0,
 };
 
 const autoSaveDraft = {
@@ -635,6 +637,30 @@ async function autoConnectCloudIfConfigured() {
     return;
   }
   await connectCloud(true);
+}
+
+async function syncCloudOnAppWake(force = false) {
+  const now = Date.now();
+  if (!force && now - Number(cloud.wakeSyncAt || 0) < 4500) return;
+  if (cloud.wakeSyncInFlight) return;
+
+  const config = loadCloudConfig();
+  if (!config.url || !config.anonKey || !config.workspaceKey) return;
+
+  cloud.wakeSyncInFlight = true;
+  cloud.wakeSyncAt = now;
+  try {
+    applyCloudInputs(config);
+    applyCloudUiMode(config);
+
+    if (!cloud.connected) {
+      const ok = await connectCloud(false);
+      if (!ok) return;
+    }
+    await loadCloudState();
+  } finally {
+    cloud.wakeSyncInFlight = false;
+  }
 }
 
 function normalizeUserName(value) {
@@ -2598,6 +2624,10 @@ async function handleEntryPhotos(event) {
 
 async function appendEntryPhotoFiles(files) {
   if (!files.length) return;
+  if (!cloud.connected || !cloud.client || !cloud.workspaceKey) {
+    setCloudStatus("Bitte zuerst Cloud verbinden. Fotos werden nur in der Cloud gespeichert.", "error");
+    return;
+  }
   const project = ensureActiveProjectId();
   if (!project) return;
   const entry = getActiveEntry();
@@ -2605,62 +2635,88 @@ async function appendEntryPhotoFiles(files) {
   if (!Array.isArray(entry.photos)) entry.photos = [];
   const projectId = sanitizeStorageSegment(project.id, "project");
   const entryId = sanitizeStorageSegment(entry.id, "entry");
+  let addedCount = 0;
+  let failedCount = 0;
 
   for (const file of files) {
     if (!file.type.startsWith("image/")) continue;
     const dataUrl = await toOptimizedPhotoDataUrl(file);
     const photoId = uid();
-    let cloudPath = "";
-    if (cloud.connected && cloud.client && cloud.workspaceKey) {
-      const ext = getDataUrlFileExtension(dataUrl);
-      const targetPath = `${cloud.workspaceKey}/projects/${projectId}/entries/${entryId}/photos/${photoId}.${ext}`;
-      cloudPath = await tryUploadPhotoDataUrl(dataUrl, targetPath);
+    const ext = getDataUrlFileExtension(dataUrl);
+    const targetPath = `${cloud.workspaceKey}/projects/${projectId}/entries/${entryId}/photos/${photoId}.${ext}`;
+    const cloudPath = await tryUploadPhotoDataUrl(dataUrl, targetPath);
+    if (!cloudPath) {
+      failedCount += 1;
+      continue;
     }
     entry.photos.push({
       id: photoId,
       name: file.name,
-      dataUrl: cloudPath ? "" : dataUrl,
+      dataUrl: "",
       cloudPath,
     });
+    addedCount += 1;
   }
 
-  renderEntryPhotos(entry);
-  persist();
-  updateStatus("Ungespeichert");
+  if (addedCount > 0) {
+    renderEntryPhotos(entry);
+    persist();
+    updateStatus("Ungespeichert");
+  }
+  if (failedCount > 0) {
+    setCloudStatus(`Einige Fotos konnten nicht hochgeladen werden (${failedCount}).`, "error");
+  } else if (addedCount > 0) {
+    setCloudStatus(`${addedCount} Foto(s) in der Cloud gespeichert.`, "success");
+  }
 }
 
 async function appendPhotoFiles(files) {
   if (!files.length) return;
+  if (!cloud.connected || !cloud.client || !cloud.workspaceKey) {
+    setCloudStatus("Bitte zuerst Cloud verbinden. Fotos werden nur in der Cloud gespeichert.", "error");
+    return;
+  }
   const project = ensureActiveProjectId();
   if (!project) return;
   ensureProjectMediaState(project);
   const activeFolderId = project.activePhotoFolderId || DEFAULT_PHOTO_FOLDER_ID;
   const projectId = sanitizeStorageSegment(project.id, "project");
   const folderId = sanitizeStorageSegment(activeFolderId, DEFAULT_PHOTO_FOLDER_ID);
+  let addedCount = 0;
+  let failedCount = 0;
 
   for (const file of files) {
     if (!file.type.startsWith("image/")) continue;
     const dataUrl = await toOptimizedPhotoDataUrl(file);
     const photoId = uid();
-    let cloudPath = "";
-    if (cloud.connected && cloud.client && cloud.workspaceKey) {
-      const ext = getDataUrlFileExtension(dataUrl);
-      const targetPath = `${cloud.workspaceKey}/projects/${projectId}/folders/${folderId}/${photoId}.${ext}`;
-      cloudPath = await tryUploadPhotoDataUrl(dataUrl, targetPath);
+    const ext = getDataUrlFileExtension(dataUrl);
+    const targetPath = `${cloud.workspaceKey}/projects/${projectId}/folders/${folderId}/${photoId}.${ext}`;
+    const cloudPath = await tryUploadPhotoDataUrl(dataUrl, targetPath);
+    if (!cloudPath) {
+      failedCount += 1;
+      continue;
     }
     project.photos.push({
       id: photoId,
       name: file.name,
-      dataUrl: cloudPath ? "" : dataUrl,
+      dataUrl: "",
       cloudPath,
       folderId: activeFolderId,
     });
+    addedCount += 1;
   }
 
-  renderPhotoFolders();
-  renderPhotos();
-  persist();
-  updateStatus("Ungespeichert");
+  if (addedCount > 0) {
+    renderPhotoFolders();
+    renderPhotos();
+    persist();
+    updateStatus("Ungespeichert");
+  }
+  if (failedCount > 0) {
+    setCloudStatus(`Einige Fotos konnten nicht hochgeladen werden (${failedCount}).`, "error");
+  } else if (addedCount > 0) {
+    setCloudStatus(`${addedCount} Foto(s) in der Cloud gespeichert.`, "success");
+  }
 }
 
 function toDataUrl(file) {
@@ -3565,6 +3621,17 @@ function bindEvents() {
       setCloudBusy(false);
     });
   }
+  window.addEventListener("pageshow", () => {
+    void syncCloudOnAppWake(true);
+  });
+  window.addEventListener("online", () => {
+    void syncCloudOnAppWake(true);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      void syncCloudOnAppWake(false);
+    }
+  });
   if (el.projectSelect) {
     el.projectSelect.addEventListener("change", () => {
       switchActiveProject(el.projectSelect.value);
