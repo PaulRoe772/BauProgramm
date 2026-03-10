@@ -81,12 +81,36 @@ const el = {
   weather: document.getElementById("weather"),
   workers: document.getElementById("workers"),
   companyNameInput: document.getElementById("companyNameInput"),
+  companyTradeInput: document.getElementById("companyTradeInput"),
+  companyContactInput: document.getElementById("companyContactInput"),
   companyCountInput: document.getElementById("companyCountInput"),
+  companyEmployeeNameInput: document.getElementById("companyEmployeeNameInput"),
+  companyShiftStartInput: document.getElementById("companyShiftStartInput"),
+  companyShiftEndInput: document.getElementById("companyShiftEndInput"),
+  companyShiftBreakInput: document.getElementById("companyShiftBreakInput"),
+  companyNameSuggestions: document.getElementById("companyNameSuggestions"),
+  companyTradeSuggestions: document.getElementById("companyTradeSuggestions"),
+  companyContactSuggestions: document.getElementById("companyContactSuggestions"),
+  companyEmployeeSuggestions: document.getElementById("companyEmployeeSuggestions"),
   addCompanyWorkerBtn: document.getElementById("addCompanyWorkerBtn"),
   companyWorkersList: document.getElementById("companyWorkersList"),
+  workStartTime: document.getElementById("workStartTime"),
+  workEndTime: document.getElementById("workEndTime"),
+  workBreakMinutes: document.getElementById("workBreakMinutes"),
+  workShiftType: document.getElementById("workShiftType"),
+  workLocationDetail: document.getElementById("workLocationDetail"),
+  workItemLocationInput: document.getElementById("workItemLocationInput"),
+  workItemDescriptionInput: document.getElementById("workItemDescriptionInput"),
+  workItemQuantityInput: document.getElementById("workItemQuantityInput"),
+  addWorkItemBtn: document.getElementById("addWorkItemBtn"),
+  workItemsList: document.getElementById("workItemsList"),
   workDone: document.getElementById("workDone"),
+  workQuantities: document.getElementById("workQuantities"),
   issues: document.getElementById("issues"),
   nextSteps: document.getElementById("nextSteps"),
+  materialDeliveries: document.getElementById("materialDeliveries"),
+  equipmentUsed: document.getElementById("equipmentUsed"),
+  siteVisitors: document.getElementById("siteVisitors"),
   todoInput: document.getElementById("todoInput"),
   addTodoBtn: document.getElementById("addTodoBtn"),
   todoList: document.getElementById("todoList"),
@@ -120,6 +144,8 @@ const el = {
   deleteBtn: document.getElementById("deleteBtn"),
   privateNotes: document.getElementById("privateNotes"),
   signatureCanvas: document.getElementById("signatureCanvas"),
+  signatureSignerName: document.getElementById("signatureSignerName"),
+  signatureSignerRole: document.getElementById("signatureSignerRole"),
   clearSignatureBtn: document.getElementById("clearSignatureBtn"),
   entryItemTemplate: document.getElementById("entryItemTemplate"),
   todoItemTemplate: document.getElementById("todoItemTemplate"),
@@ -466,6 +492,8 @@ function createCloudPhotoSnapshot(photo, includeFolder = false) {
     id: String(photo?.id || uid()),
     name: String(photo?.name || "Baufoto"),
     cloudPath: normalizeCloudPath(photo?.cloudPath || ""),
+    description: String(photo?.description || ""),
+    location: String(photo?.location || ""),
   };
   if (includeFolder) {
     item.folderId = String(photo?.folderId || DEFAULT_PHOTO_FOLDER_ID);
@@ -964,7 +992,16 @@ function handleLogout() {
 }
 
 function getAutoResizeTextareas() {
-  return [el.privateNotes, el.workDone, el.issues, el.nextSteps].filter(Boolean);
+  return [
+    el.privateNotes,
+    el.workDone,
+    el.workQuantities,
+    el.issues,
+    el.nextSteps,
+    el.materialDeliveries,
+    el.equipmentUsed,
+    el.siteVisitors,
+  ].filter(Boolean);
 }
 
 function autoResizeTextarea(textarea) {
@@ -1092,10 +1129,22 @@ function emptyEntry() {
     weather: "",
     workers: "",
     companyWorkers: [],
+    workStartTime: "",
+    workEndTime: "",
+    workBreakMinutes: "",
+    workShiftType: "",
+    workLocationDetail: "",
+    locationWorkItems: [],
     workDone: "",
+    workQuantities: "",
     issues: "",
     nextSteps: "",
+    materialDeliveries: "",
+    equipmentUsed: "",
+    siteVisitors: "",
     privateNotes: "",
+    signatureSignerName: "",
+    signatureSignerRole: "",
     signatureDataUrl: "",
     signatureCloudPath: "",
     todos: [],
@@ -1104,12 +1153,125 @@ function emptyEntry() {
   };
 }
 
+function normalizeLocationWorkItem(source = {}) {
+  const location = String(source?.location || source?.ort || "").trim();
+  const description = String(source?.description || source?.leistung || source?.work || "").trim();
+  const quantity = String(source?.trade || source?.gewerk || source?.quantity || source?.menge || "").trim();
+  if (!location && !description && !quantity) return null;
+  return {
+    id: String(source?.id || uid()),
+    location,
+    description,
+    quantity,
+  };
+}
+
+function normalizeCompanyWorkerItem(source = {}) {
+  const company = normalizeUserName(source?.company || source?.name || "");
+  if (!company) return null;
+
+  const parsedCount = Math.round(Number(source?.count));
+  const shiftStart = /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(source?.shiftStart || source?.start || ""))
+    ? String(source.shiftStart || source.start)
+    : "";
+  const shiftEnd = /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(source?.shiftEnd || source?.end || ""))
+    ? String(source.shiftEnd || source.end)
+    : "";
+  const parsedBreak = normalizeBreakMinutes(source?.shiftBreakMinutes ?? source?.breakMinutes ?? source?.break ?? "");
+  return {
+    id: String(source?.id || uid()),
+    company,
+    trade: normalizeUserName(source?.trade || source?.gewerk || ""),
+    contact: normalizeUserName(source?.contact || source?.ansprechpartner || ""),
+    employeeName: normalizeUserName(source?.employeeName || source?.workerName || source?.mitarbeiter || ""),
+    count: Number.isFinite(parsedCount) && parsedCount > 0 ? parsedCount : 1,
+    shiftStart,
+    shiftEnd,
+    shiftBreakMinutes: Number.isFinite(parsedBreak) && parsedBreak > 0 ? String(parsedBreak) : "",
+  };
+}
+
+function formatCompanyWorkerShift(item) {
+  const start = String(item?.shiftStart || "").trim();
+  const end = String(item?.shiftEnd || "").trim();
+  const breakMinutes = String(item?.shiftBreakMinutes || "").trim();
+  if (!start && !end && !breakMinutes) return "-";
+  if (!start && !end && breakMinutes) return `Pause ${breakMinutes} Min.`;
+  const range = start && end ? `${start} - ${end}` : `${start || "-"} - ${end || "-"}`;
+  if (!breakMinutes) return range;
+  return `${range}, Pause ${breakMinutes} Min.`;
+}
+
+function getCompanyWorkerShiftDurationLabel(item) {
+  const start = String(item?.shiftStart || "").trim();
+  const end = String(item?.shiftEnd || "").trim();
+  if (!start || !end) return "";
+  const duration = getShiftDurationMinutes(start, end, normalizeBreakMinutes(item?.shiftBreakMinutes || 0));
+  if (duration == null) return "";
+  return `${formatHoursFromMinutes(duration)} h`;
+}
+
+function buildTradeTimeSummaryLines(companyWorkers = []) {
+  if (!Array.isArray(companyWorkers) || !companyWorkers.length) return [];
+  const map = new Map();
+
+  for (const item of companyWorkers) {
+    const tradeLabel = toPrintText(item?.trade, "Ohne Gewerk");
+    if (!map.has(tradeLabel)) {
+      map.set(tradeLabel, {
+        count: 0,
+        minutesTotal: 0,
+        hasDuration: false,
+      });
+    }
+    const bucket = map.get(tradeLabel);
+    const workerCount = item?.employeeName ? 1 : Math.max(1, Number(item?.count || 1));
+    bucket.count += workerCount;
+    const duration = getShiftDurationMinutes(
+      String(item?.shiftStart || ""),
+      String(item?.shiftEnd || ""),
+      normalizeBreakMinutes(item?.shiftBreakMinutes || 0)
+    );
+    if (duration != null) {
+      bucket.minutesTotal += duration * workerCount;
+      bucket.hasDuration = true;
+    }
+  }
+
+  const lines = [];
+  for (const [trade, data] of map.entries()) {
+    const peopleLabel = `${data.count || 0} MA`;
+    if (data.hasDuration) {
+      lines.push(`${trade}: ${peopleLabel}, Summe ${formatHoursFromMinutes(data.minutesTotal)} Std.`);
+    } else {
+      lines.push(`${trade}: ${peopleLabel}`);
+    }
+  }
+  return lines;
+}
+
+function getCompanyWorkersTotalMinutes(companyWorkers = []) {
+  if (!Array.isArray(companyWorkers)) return 0;
+  return companyWorkers.reduce((sum, item) => {
+    const workerCount = item?.employeeName ? 1 : Math.max(1, Number(item?.count || 1));
+    const duration = getShiftDurationMinutes(
+      String(item?.shiftStart || ""),
+      String(item?.shiftEnd || ""),
+      normalizeBreakMinutes(item?.shiftBreakMinutes || 0)
+    );
+    if (duration == null) return sum;
+    return sum + duration * workerCount;
+  }, 0);
+}
+
 function normalizeEntryPhoto(source = {}) {
   return {
     id: String(source?.id || uid()),
     name: String(source?.name || "Baufoto"),
     dataUrl: String(source?.dataUrl || ""),
     cloudPath: normalizeCloudPath(source?.cloudPath || source?.path || ""),
+    description: String(source?.description || source?.caption || ""),
+    location: String(source?.location || source?.section || source?.bauabschnitt || ""),
   };
 }
 
@@ -1120,12 +1282,28 @@ function normalizeEntry(source = {}) {
     ...rest,
     id: String(source?.id || uid()),
     todos: Array.isArray(source?.todos) ? source.todos : [],
+    locationWorkItems: Array.isArray(source?.locationWorkItems || source?.workItems)
+      ? (source.locationWorkItems || source.workItems).map((item) => normalizeLocationWorkItem(item)).filter(Boolean)
+      : [],
     photos: Array.isArray(source?.photos)
       ? source.photos.map((photo) => normalizeEntryPhoto(photo)).filter((photo) => photo.dataUrl || photo.cloudPath)
       : [],
-    companyWorkers: Array.isArray(source?.companyWorkers) ? source.companyWorkers : [],
+    companyWorkers: Array.isArray(source?.companyWorkers)
+      ? source.companyWorkers.map((item) => normalizeCompanyWorkerItem(item)).filter(Boolean)
+      : [],
     weather: String(source?.weather || "").replace(/^Bewoelkt$/i, "Bewölkt"),
     privateNotes: String(source?.privateNotes || ""),
+    workStartTime: String(source?.workStartTime || source?.workStart || ""),
+    workEndTime: String(source?.workEndTime || source?.workEnd || ""),
+    workBreakMinutes: String(source?.workBreakMinutes ?? source?.breakMinutes ?? source?.workBreak ?? ""),
+    workShiftType: String(source?.workShiftType || source?.shiftType || ""),
+    workLocationDetail: String(source?.workLocationDetail || source?.workLocation || source?.location || ""),
+    workQuantities: String(source?.workQuantities || source?.quantities || source?.progress || ""),
+    materialDeliveries: String(source?.materialDeliveries || source?.deliveries || ""),
+    equipmentUsed: String(source?.equipmentUsed || source?.equipment || source?.machines || ""),
+    siteVisitors: String(source?.siteVisitors || source?.visitors || ""),
+    signatureSignerName: String(source?.signatureSignerName || source?.signatureName || ""),
+    signatureSignerRole: String(source?.signatureSignerRole || source?.signatureRole || ""),
     signatureDataUrl: typeof source?.signatureDataUrl === "string" ? source.signatureDataUrl : "",
     signatureCloudPath: normalizeCloudPath(source?.signatureCloudPath || source?.signaturePath || ""),
   };
@@ -1345,10 +1523,23 @@ function syncEntryInputs() {
   el.weather.value = entry.weather || "";
   el.workers.value = entry.workers || "";
   renderCompanyWorkers(entry);
-  el.workDone.value = entry.workDone || "";
+  renderCompanyWorkerSuggestions();
+  if (el.workStartTime) el.workStartTime.value = entry.workStartTime || "";
+  if (el.workEndTime) el.workEndTime.value = entry.workEndTime || "";
+  if (el.workBreakMinutes) el.workBreakMinutes.value = entry.workBreakMinutes || "";
+  if (el.workShiftType) el.workShiftType.value = entry.workShiftType || "";
+  if (el.workLocationDetail) el.workLocationDetail.value = entry.workLocationDetail || "";
+  renderLocationWorkItems(entry);
+  if (el.workDone) el.workDone.value = entry.workDone || "";
+  if (el.workQuantities) el.workQuantities.value = entry.workQuantities || "";
   el.issues.value = entry.issues || "";
   el.nextSteps.value = entry.nextSteps || "";
+  if (el.materialDeliveries) el.materialDeliveries.value = entry.materialDeliveries || "";
+  if (el.equipmentUsed) el.equipmentUsed.value = entry.equipmentUsed || "";
+  if (el.siteVisitors) el.siteVisitors.value = entry.siteVisitors || "";
   el.privateNotes.value = entry.privateNotes || "";
+  if (el.signatureSignerName) el.signatureSignerName.value = entry.signatureSignerName || "";
+  if (el.signatureSignerRole) el.signatureSignerRole.value = entry.signatureSignerRole || "";
   renderSignature(getEntrySignatureSource(entry));
   autoResizeAllTextareas();
   renderTodos(entry);
@@ -1367,10 +1558,21 @@ function pullInputsToActiveEntry() {
   entry.date = el.entryDate.value;
   entry.weather = el.weather.value;
   entry.workers = el.workers.value;
-  entry.workDone = el.workDone.value;
+  if (el.workStartTime) entry.workStartTime = el.workStartTime.value;
+  if (el.workEndTime) entry.workEndTime = el.workEndTime.value;
+  if (el.workBreakMinutes) entry.workBreakMinutes = el.workBreakMinutes.value;
+  if (el.workShiftType) entry.workShiftType = el.workShiftType.value;
+  if (el.workLocationDetail) entry.workLocationDetail = el.workLocationDetail.value;
+  if (el.workDone) entry.workDone = el.workDone.value;
+  if (el.workQuantities) entry.workQuantities = el.workQuantities.value;
   entry.issues = el.issues.value;
   entry.nextSteps = el.nextSteps.value;
+  if (el.materialDeliveries) entry.materialDeliveries = el.materialDeliveries.value;
+  if (el.equipmentUsed) entry.equipmentUsed = el.equipmentUsed.value;
+  if (el.siteVisitors) entry.siteVisitors = el.siteVisitors.value;
   entry.privateNotes = el.privateNotes.value;
+  if (el.signatureSignerName) entry.signatureSignerName = el.signatureSignerName.value;
+  if (el.signatureSignerRole) entry.signatureSignerRole = el.signatureSignerRole.value;
   updateStatus("Ungespeichert");
   updatePrintMeta();
 }
@@ -1567,34 +1769,306 @@ function renderTodos(entry) {
   }
 }
 
+function formatLocationWorkItemPrintLine(item) {
+  const location = toPrintText(item?.location, "Ohne Ort");
+  const description = toPrintText(item?.description, "Ohne Leistungsbeschreibung");
+  let line = `${location}: ${description}`;
+  const quantity = String(item?.quantity || "").trim();
+  if (quantity) {
+    line += ` | Gewerk: ${quantity}`;
+  }
+  return line;
+}
+
+function renderLocationWorkItems(entry) {
+  if (!el.workItemsList) return;
+  el.workItemsList.innerHTML = "";
+  const items = Array.isArray(entry?.locationWorkItems) ? entry.locationWorkItems : [];
+  if (!items.length) {
+    const empty = document.createElement("li");
+    empty.className = "work-items-empty";
+    empty.textContent = "Noch keine Leistungspositionen nach Ort erfasst.";
+    el.workItemsList.appendChild(empty);
+    return;
+  }
+
+  for (const item of items) {
+    const li = document.createElement("li");
+    li.className = "work-item";
+
+    const main = document.createElement("p");
+    main.className = "work-item-main";
+    main.textContent = `${toPrintText(item.location, "-")}: ${toPrintText(item.description, "-")}`;
+
+    const meta = document.createElement("p");
+    meta.className = "work-item-meta";
+    meta.textContent = `Gewerk: ${toPrintText(item.quantity, "-")}`;
+
+    const details = document.createElement("div");
+    details.className = "work-item-details";
+    details.appendChild(main);
+    details.appendChild(meta);
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "work-item-remove";
+    removeButton.textContent = "x";
+    removeButton.addEventListener("click", () => {
+      entry.locationWorkItems = entry.locationWorkItems.filter((x) => x.id !== item.id);
+      renderLocationWorkItems(entry);
+      persist();
+      updateStatus("Ungespeichert");
+    });
+
+    li.appendChild(details);
+    li.appendChild(removeButton);
+    el.workItemsList.appendChild(li);
+  }
+}
+
+function addLocationWorkItem(
+  locationValue = null,
+  descriptionValue = null,
+  quantityValue = null
+) {
+  const entry = getActiveEntry();
+  if (!entry) return false;
+  if (!Array.isArray(entry.locationWorkItems)) entry.locationWorkItems = [];
+
+  const location = String((locationValue ?? el.workItemLocationInput?.value) || "").trim();
+  const description = String((descriptionValue ?? el.workItemDescriptionInput?.value) || "").trim();
+  const quantity = String((quantityValue ?? el.workItemQuantityInput?.value) || "").trim();
+
+  if (!location || !description) {
+    setManageReportsStatus("Bitte Ort und Leistungsbeschreibung eintragen.", "error");
+    return false;
+  }
+
+  entry.locationWorkItems.push({
+    id: uid(),
+    location,
+    description,
+    quantity,
+  });
+
+  if (locationValue == null && el.workItemLocationInput) el.workItemLocationInput.value = "";
+  if (descriptionValue == null && el.workItemDescriptionInput) el.workItemDescriptionInput.value = "";
+  if (quantityValue == null && el.workItemQuantityInput) el.workItemQuantityInput.value = "";
+
+  renderLocationWorkItems(entry);
+  persist();
+  updateStatus("Ungespeichert");
+  setManageReportsStatus("Leistungsposition hinzugefügt.", "success");
+  return true;
+}
+
+function toSortedSuggestionValues(valuesSet) {
+  return Array.from(valuesSet).sort((a, b) => a.localeCompare(b, "de-DE"));
+}
+
+function collectCompanyWorkerSuggestions() {
+  const companies = new Set();
+  const trades = new Set();
+  const contacts = new Set();
+  const employeeNames = new Set();
+
+  for (const project of state.projects) {
+    const entries = Array.isArray(project?.entries) ? project.entries : [];
+    for (const entry of entries) {
+      const workers = Array.isArray(entry?.companyWorkers) ? entry.companyWorkers : [];
+      for (const item of workers) {
+        const company = normalizeUserName(item?.company || "");
+        const trade = normalizeUserName(item?.trade || "");
+        const contact = normalizeUserName(item?.contact || "");
+        const employeeName = normalizeUserName(item?.employeeName || "");
+        if (company) companies.add(company);
+        if (trade) trades.add(trade);
+        if (contact) contacts.add(contact);
+        if (employeeName) employeeNames.add(employeeName);
+      }
+    }
+  }
+
+  return {
+    companies: toSortedSuggestionValues(companies),
+    trades: toSortedSuggestionValues(trades),
+    contacts: toSortedSuggestionValues(contacts),
+    employeeNames: toSortedSuggestionValues(employeeNames),
+  };
+}
+
+function renderSuggestionDatalist(node, values = []) {
+  if (!node) return;
+  node.innerHTML = "";
+  for (const value of values) {
+    const option = document.createElement("option");
+    option.value = value;
+    node.appendChild(option);
+  }
+}
+
+function renderCompanyWorkerSuggestions() {
+  const pool = collectCompanyWorkerSuggestions();
+  renderSuggestionDatalist(el.companyNameSuggestions, pool.companies);
+  renderSuggestionDatalist(el.companyTradeSuggestions, pool.trades);
+  renderSuggestionDatalist(el.companyContactSuggestions, pool.contacts);
+  renderSuggestionDatalist(el.companyEmployeeSuggestions, pool.employeeNames);
+}
+
+function getCompanyWorkerGroupKey(item = {}) {
+  return normalizeUserName(item?.company || "").toLowerCase();
+}
+
+function formatCompanyWorkerPersonTime(item = {}) {
+  const start = String(item?.shiftStart || "").trim();
+  const end = String(item?.shiftEnd || "").trim();
+  const breakMinutes = String(item?.shiftBreakMinutes || "").trim();
+  if (!start && !end && !breakMinutes) return "ohne Zeitangabe";
+
+  let label = "";
+  if (start || end) {
+    label = `von ${start || "-"} bis ${end || "-"}`;
+  }
+  if (breakMinutes) {
+    label = label ? `${label}, Pause ${breakMinutes} Min.` : `Pause ${breakMinutes} Min.`;
+  }
+  return label || "ohne Zeitangabe";
+}
+
+function buildCompanyWorkerGroups(items = []) {
+  const groups = [];
+  const lookup = new Map();
+
+  for (const item of Array.isArray(items) ? items : []) {
+    const company = normalizeUserName(item?.company || "");
+    if (!company) continue;
+
+    const trade = normalizeUserName(item?.trade || "");
+    const contact = normalizeUserName(item?.contact || "");
+    const shiftStart = String(item?.shiftStart || "").trim();
+    const shiftEnd = String(item?.shiftEnd || "").trim();
+    const shiftBreakMinutes = String(item?.shiftBreakMinutes || "").trim();
+    const key = getCompanyWorkerGroupKey({ company });
+
+    let group = lookup.get(key);
+    if (!group) {
+      group = {
+        key,
+        company,
+        trades: [],
+        contacts: [],
+        employees: [],
+        legacyCount: 0,
+      };
+      lookup.set(key, group);
+      groups.push(group);
+    }
+    if (trade && !group.trades.includes(trade)) group.trades.push(trade);
+    if (contact && !group.contacts.includes(contact)) group.contacts.push(contact);
+
+    const employeeName = normalizeUserName(item?.employeeName || "");
+    if (employeeName) {
+      group.employees.push({
+        id: String(item?.id || uid()),
+        name: employeeName,
+        shiftStart,
+        shiftEnd,
+        shiftBreakMinutes,
+      });
+    } else {
+      const workerCount = Math.max(1, Number(item?.count || 1));
+      group.legacyCount += workerCount;
+    }
+  }
+
+  return groups;
+}
+
+function commitCompanyWorkersChange(entry) {
+  updateWorkersFromCompanyList(entry);
+  renderCompanyWorkers(entry);
+  renderCompanyWorkerSuggestions();
+  persist();
+  updateStatus("Ungespeichert");
+}
+
 function renderCompanyWorkers(entry) {
   el.companyWorkersList.innerHTML = "";
-  for (const item of entry.companyWorkers) {
+  const groups = buildCompanyWorkerGroups(entry.companyWorkers);
+
+  for (const group of groups) {
     const li = document.createElement("li");
     li.className = "company-workers-item";
 
-    const company = document.createElement("span");
-    company.className = "company-workers-company";
-    company.textContent = item.company;
+    const details = document.createElement("div");
+    details.className = "company-workers-details";
 
-    const count = document.createElement("span");
-    count.className = "company-workers-count";
-    count.textContent = `${item.count}`;
+    const company = document.createElement("p");
+    company.className = "company-workers-company";
+    const groupedCount = group.employees.length + group.legacyCount;
+    company.textContent = `${group.company} - ${groupedCount} Mitarbeiter`;
+
+    const meta = document.createElement("p");
+    meta.className = "company-workers-meta";
+    meta.textContent = `Gewerk: ${toPrintText(group.trades.join(", "), "-")} | Ansprechpartner: ${toPrintText(
+      group.contacts.join(", "),
+      "-"
+    )}`;
+
+    const employeesList = document.createElement("ul");
+    employeesList.className = "company-workers-members";
+    for (const employee of group.employees) {
+      const employeeRow = document.createElement("li");
+      employeeRow.className = "company-workers-member";
+
+      const employeeText = document.createElement("span");
+      employeeText.className = "company-workers-member-text";
+      employeeText.textContent = `${toPrintText(employee.name, "Ohne Namen")} - ${formatCompanyWorkerPersonTime(
+        employee
+      )}`;
+
+      const removeEmployeeButton = document.createElement("button");
+      removeEmployeeButton.type = "button";
+      removeEmployeeButton.className = "company-workers-member-remove";
+      removeEmployeeButton.textContent = "x";
+      removeEmployeeButton.addEventListener("click", () => {
+        entry.companyWorkers = entry.companyWorkers.filter((x) => x.id !== employee.id);
+        commitCompanyWorkersChange(entry);
+      });
+
+      employeeRow.appendChild(employeeText);
+      employeeRow.appendChild(removeEmployeeButton);
+      employeesList.appendChild(employeeRow);
+    }
+
+    if (group.legacyCount > 0) {
+      const legacyRow = document.createElement("li");
+      legacyRow.className = "company-workers-member";
+      const legacyText = document.createElement("span");
+      legacyText.className = "company-workers-member-text";
+      legacyText.textContent = `${group.legacyCount} Person(en) ohne Namen`;
+      legacyRow.appendChild(legacyText);
+      employeesList.appendChild(legacyRow);
+    }
+
+    details.appendChild(company);
+    details.appendChild(meta);
+    if (employeesList.childElementCount > 0) {
+      details.appendChild(employeesList);
+    }
 
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.className = "company-workers-remove";
     removeButton.textContent = "x";
     removeButton.addEventListener("click", () => {
-      entry.companyWorkers = entry.companyWorkers.filter((x) => x.id !== item.id);
-      updateWorkersFromCompanyList(entry);
-      renderCompanyWorkers(entry);
-      persist();
-      updateStatus("Ungespeichert");
+      entry.companyWorkers = entry.companyWorkers.filter(
+        (x) => getCompanyWorkerGroupKey(x) !== group.key
+      );
+      commitCompanyWorkersChange(entry);
     });
 
-    li.appendChild(company);
-    li.appendChild(count);
+    li.appendChild(details);
     li.appendChild(removeButton);
     el.companyWorkersList.appendChild(li);
   }
@@ -1617,8 +2091,11 @@ function renderEntryPhotos(entry) {
   for (const photo of photos) {
     const src = resolvePhotoSource(photo);
     if (!src) continue;
-    const wrapper = document.createElement("div");
-    wrapper.className = "photo";
+    const wrapper = document.createElement("article");
+    wrapper.className = "entry-photo-card";
+
+    const photoFrame = document.createElement("div");
+    photoFrame.className = "photo";
 
     const img = document.createElement("img");
     img.src = src;
@@ -1634,8 +2111,41 @@ function renderEntryPhotos(entry) {
       updateStatus("Ungespeichert");
     });
 
-    wrapper.appendChild(img);
-    wrapper.appendChild(remove);
+    const details = document.createElement("div");
+    details.className = "entry-photo-meta";
+
+    const nameRow = document.createElement("p");
+    nameRow.className = "entry-photo-name";
+    nameRow.textContent = toPrintText(photo.name, "Foto");
+
+    const descriptionInput = document.createElement("input");
+    descriptionInput.type = "text";
+    descriptionInput.placeholder = "Bildbeschreibung";
+    descriptionInput.value = String(photo.description || "");
+    descriptionInput.addEventListener("input", () => {
+      photo.description = descriptionInput.value;
+      persist();
+      updateStatus("Ungespeichert");
+    });
+
+    const locationInput = document.createElement("input");
+    locationInput.type = "text";
+    locationInput.placeholder = "Bauabschnitt / Ort";
+    locationInput.value = String(photo.location || "");
+    locationInput.addEventListener("input", () => {
+      photo.location = locationInput.value;
+      persist();
+      updateStatus("Ungespeichert");
+    });
+
+    details.appendChild(nameRow);
+    details.appendChild(descriptionInput);
+    details.appendChild(locationInput);
+
+    photoFrame.appendChild(img);
+    photoFrame.appendChild(remove);
+    wrapper.appendChild(photoFrame);
+    wrapper.appendChild(details);
     el.entryPhotoGrid.appendChild(wrapper);
     rendered += 1;
   }
@@ -2403,6 +2913,44 @@ function fmtEntryDate(dateValue) {
   return date.toLocaleDateString("de-DE");
 }
 
+function getReportTimelinessInfo(entry) {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(entry?.date || ""));
+  if (!dateMatch) {
+    return {
+      label: "Nicht bewertbar",
+      delayDays: null,
+    };
+  }
+
+  const reportDay = Date.UTC(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]));
+  const ref = entry?.savedAt ? new Date(entry.savedAt) : new Date();
+  if (Number.isNaN(ref.getTime())) {
+    return {
+      label: "Nicht bewertbar",
+      delayDays: null,
+    };
+  }
+
+  const refDay = Date.UTC(ref.getFullYear(), ref.getMonth(), ref.getDate());
+  const delayDays = Math.max(0, Math.floor((refDay - reportDay) / 86400000));
+  if (delayDays === 0) {
+    return {
+      label: "Tagesgleich erstellt",
+      delayDays,
+    };
+  }
+  if (delayDays === 1) {
+    return {
+      label: "Am Folgetag erstellt",
+      delayDays,
+    };
+  }
+  return {
+    label: `Verspätet erstellt (${delayDays} Tage)`,
+    delayDays,
+  };
+}
+
 function setText(node, value, fallback = "-") {
   if (!node) return;
   const content = String(value || "").trim();
@@ -2421,15 +2969,48 @@ function updatePrintMeta() {
   setText(el.printSiteManager, siteManager);
   setText(el.printEntryDate, entry ? fmtEntryDate(entry.date) : "");
   setText(el.printWeather, entry ? entry.weather : "");
+  const createdAtLabel = entry?.savedAt
+    ? fmt(entry.savedAt)
+    : new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
   setText(
     el.printGeneratedAt,
-    new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })
+    createdAtLabel
   );
 }
 
 function toPrintText(value, fallback = "-") {
   const text = String(value == null ? "" : value).trim();
   return text || fallback;
+}
+
+function formatCompanyWorkerPrintLines(items = []) {
+  const groups = buildCompanyWorkerGroups(items);
+  return groups.map((group) => {
+    const groupedCount = group.employees.length + group.legacyCount;
+    const employeeParts = group.employees.map((employee) => {
+      const name = toPrintText(employee.name, "Ohne Namen");
+      const time = formatCompanyWorkerPersonTime(employee);
+      return `${name} ${time}`;
+    });
+    if (group.legacyCount > 0) {
+      employeeParts.push(`${group.legacyCount} Person(en) ohne Namen`);
+    }
+    return `${toPrintText(group.company, "-")} - ${groupedCount} Mitarbeiter | Gewerk: ${toPrintText(
+      group.trades.join(", "),
+      "-"
+    )} | Ansprechpartner: ${toPrintText(group.contacts.join(", "), "-")} | Einteilung: ${
+      employeeParts.length ? employeeParts.join("; ") : "-"
+    }`;
+  });
+}
+
+function buildEntryPhotoCaption(photo, fallbackLabel = "Foto") {
+  const description = String(photo?.description || "").trim();
+  const location = String(photo?.location || "").trim();
+  if (description && location) return `${description} | ${location}`;
+  if (description) return description;
+  if (location) return `Ort: ${location}`;
+  return toPrintText(photo?.name, fallbackLabel);
 }
 
 function createPrintMetaItem(label, value) {
@@ -2521,6 +3102,8 @@ function preparePrintReport() {
   const projectNumber = el.projectNumber ? el.projectNumber.value.trim() : project.number || "";
   const siteManager = el.siteManager ? el.siteManager.value.trim() : project.manager || "";
   const generatedAt = new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+  const savedAtLabel = entry.savedAt ? fmt(entry.savedAt) : generatedAt;
+  const timelinessInfo = getReportTimelinessInfo(entry);
   const photos = Array.isArray(entry.photos)
     ? entry.photos
         .map((photo) => ({
@@ -2539,47 +3122,70 @@ function preparePrintReport() {
   meta.appendChild(createPrintMetaItem("Bauleitung", siteManager));
   meta.appendChild(createPrintMetaItem("Berichtsdatum", fmtEntryDate(entry.date)));
   meta.appendChild(createPrintMetaItem("Wetter", entry.weather));
-  meta.appendChild(createPrintMetaItem("Erstellt am", generatedAt));
+  meta.appendChild(createPrintMetaItem("Erstellt am", savedAtLabel));
   page.appendChild(meta);
 
   const general = createPrintSection("1. Allgemeine Angaben");
   general.appendChild(createPrintField("Datum", fmtEntryDate(entry.date)));
   general.appendChild(createPrintField("Wetter", entry.weather));
+  general.appendChild(createPrintField("Bericht erstellt am", savedAtLabel));
+  general.appendChild(createPrintField("Friststatus", timelinessInfo.label));
   page.appendChild(general);
 
-  const personnel = createPrintSection("2. Personal");
+  const personnel = createPrintSection("2. Firmen, Gewerke und Personal");
   personnel.appendChild(createPrintField("Mitarbeiter vor Ort", entry.workers));
-  const companyItems = Array.isArray(entry.companyWorkers)
-    ? entry.companyWorkers.map((item) => `${item.company}: ${item.count}`)
-    : [];
-  personnel.appendChild(createPrintListField("Mitarbeiter nach Unternehmen", companyItems));
+  const companyItems = formatCompanyWorkerPrintLines(entry.companyWorkers);
+  personnel.appendChild(createPrintListField("Firmenliste", companyItems));
+  const tradeTimeLines = buildTradeTimeSummaryLines(entry.companyWorkers);
+  personnel.appendChild(createPrintListField("Arbeitszeiten pro Gewerk", tradeTimeLines));
+  const tradeMinutesTotal = getCompanyWorkersTotalMinutes(entry.companyWorkers);
+  if (tradeMinutesTotal > 0) {
+    personnel.appendChild(createPrintField("Gesamtstunden aus Gewerkzeiten", `${formatHoursFromMinutes(tradeMinutesTotal)} h`));
+  }
   page.appendChild(personnel);
 
-  const progress = createPrintSection("3. Leistungsstand");
-  progress.appendChild(createPrintField("Ausgeführte Arbeiten", entry.workDone, true));
+  const progress = createPrintSection("3. Leistungsbeschreibung");
+  const locationWorkItems = Array.isArray(entry.locationWorkItems) ? entry.locationWorkItems : [];
+  progress.appendChild(
+    createPrintListField(
+      "Leistungspositionen nach Ort",
+      locationWorkItems.map((item) => formatLocationWorkItemPrintLine(item))
+    )
+  );
+  progress.appendChild(createPrintField("Mengen / Baufortschritt", entry.workQuantities, true));
   progress.appendChild(createPrintField("Störungen / Hindernisse", entry.issues, true));
   progress.appendChild(createPrintField("Nächste Schritte", entry.nextSteps, true));
   page.appendChild(progress);
 
-  const todos = createPrintSection("4. Offene Punkte");
+  const logistics = createPrintSection("4. Materiallieferungen und Geräte");
+  logistics.appendChild(createPrintField("Materiallieferungen", entry.materialDeliveries, true));
+  logistics.appendChild(createPrintField("Eingesetzte Geräte / Maschinen", entry.equipmentUsed, true));
+  page.appendChild(logistics);
+
+  const visitors = createPrintSection("5. Baustellenbesucher");
+  visitors.appendChild(createPrintField("Besucher", entry.siteVisitors, true));
+  page.appendChild(visitors);
+
+  const todos = createPrintSection("6. Offene Punkte");
   const todoItems = Array.isArray(entry.todos) ? entry.todos.map((item) => item.text) : [];
   todos.appendChild(createPrintListField("Aufgabenliste", todoItems));
   page.appendChild(todos);
 
-  const photoSection = createPrintSection("5. Fotoanhang");
+  const photoSection = createPrintSection("7. Fotoanhang");
   if (!photos.length) {
     photoSection.appendChild(createPrintField("Fotos", "Keine Fotos hinterlegt"));
   } else {
     const grid = document.createElement("div");
     grid.className = "print-photo-grid";
-    for (const photo of photos) {
+    for (let photoIndex = 0; photoIndex < photos.length; photoIndex += 1) {
+      const photo = photos[photoIndex];
       const figure = document.createElement("figure");
       figure.className = "print-photo-item";
       const img = document.createElement("img");
       img.src = photo.source;
       img.alt = photo.name || "Baufoto";
       const caption = document.createElement("figcaption");
-      caption.textContent = toPrintText(photo.name, "Foto");
+      caption.textContent = buildEntryPhotoCaption(photo, `Foto ${photoIndex + 1}`);
       figure.appendChild(img);
       figure.appendChild(caption);
       grid.appendChild(figure);
@@ -2589,6 +3195,8 @@ function preparePrintReport() {
   page.appendChild(photoSection);
 
   const signatureSection = createPrintSection("Unterschrift Bauleitung");
+  signatureSection.appendChild(createPrintField("Name Unterzeichner", entry.signatureSignerName));
+  signatureSection.appendChild(createPrintField("Funktion", entry.signatureSignerRole));
   const signatureSource = getEntrySignatureSource(entry);
   if (signatureSource) {
     const preview = document.createElement("div");
@@ -2601,7 +3209,7 @@ function preparePrintReport() {
   } else {
     signatureSection.appendChild(createPrintField("Digitale Unterschrift", "Keine Unterschrift erfasst"));
   }
-  const signatureBlock = createPrintSection("6. Digitale Unterschrift");
+  const signatureBlock = createPrintSection("8. Digitale Unterschrift");
   signatureBlock.appendChild(signatureSection);
 
   const lines = document.createElement("div");
@@ -2714,9 +3322,18 @@ function saveEntry() {
   const entry = getActiveEntry();
   if (!entry) return;
   entry.savedAt = new Date().toISOString();
+  const timelinessInfo = getReportTimelinessInfo(entry);
   persist();
   renderEntries();
   syncEntryInputs();
+  if (timelinessInfo.delayDays != null && timelinessInfo.delayDays > 1) {
+    setManageReportsStatus(
+      `Bericht gespeichert. Hinweis: ${timelinessInfo.label}. Bitte künftig tagesgleich oder spätestens am Folgetag erfassen.`,
+      "error"
+    );
+  } else {
+    setManageReportsStatus(`Bericht gespeichert (${timelinessInfo.label}).`, "success");
+  }
 }
 
 function deleteEntry() {
@@ -2811,41 +3428,153 @@ function addTodo(textValue = null) {
 }
 
 function updateWorkersFromCompanyList(entry) {
-  const total = entry.companyWorkers.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  const total = entry.companyWorkers.reduce((sum, item) => {
+    const workerCount = item?.employeeName ? 1 : Math.max(1, Number(item?.count || 1));
+    return sum + workerCount;
+  }, 0);
   entry.workers = total > 0 ? String(total) : "";
   el.workers.value = entry.workers;
 }
 
-function upsertCompanyWorker(entry, company, count, mode = "add") {
-  const normalized = company.toLowerCase();
-  const existing = entry.companyWorkers.find((item) => item.company.toLowerCase() === normalized);
+function upsertCompanyWorker(entry, companyInput, countInput, mode = "add") {
+  const payload =
+    typeof companyInput === "object" && companyInput
+      ? {
+          company: normalizeUserName(companyInput.company || ""),
+          trade: normalizeUserName(companyInput.trade || ""),
+          contact: normalizeUserName(companyInput.contact || ""),
+          employeeName: normalizeUserName(companyInput.employeeName || ""),
+          count: Math.round(Number(companyInput.count || 0)),
+          shiftStart: /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(companyInput.shiftStart || ""))
+            ? String(companyInput.shiftStart)
+            : "",
+          shiftEnd: /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(companyInput.shiftEnd || ""))
+            ? String(companyInput.shiftEnd)
+            : "",
+          shiftBreakMinutes:
+            Number(companyInput.shiftBreakMinutes) > 0
+              ? String(normalizeBreakMinutes(companyInput.shiftBreakMinutes))
+              : "",
+        }
+      : {
+          company: normalizeUserName(companyInput || ""),
+          trade: "",
+          contact: "",
+          employeeName: "",
+          count: Math.round(Number(countInput || 0)),
+          shiftStart: "",
+          shiftEnd: "",
+          shiftBreakMinutes: "",
+        };
+
+  const hasExplicitEmployee = Boolean(payload.employeeName);
+  const normalizedCount =
+    Number.isFinite(payload.count) && payload.count > 0 ? payload.count : hasExplicitEmployee ? 1 : 1;
+  payload.count = normalizedCount;
+  if (!payload.company) return;
+
+  const keyCompany = payload.company.toLowerCase();
+  const keyTrade = payload.trade.toLowerCase();
+  const keyContact = payload.contact.toLowerCase();
+  const keyEmployee = payload.employeeName.toLowerCase();
+  const keyStart = payload.shiftStart;
+  const keyEnd = payload.shiftEnd;
+  const keyBreak = payload.shiftBreakMinutes;
+  const existing = entry.companyWorkers.find(
+    (item) =>
+      item.company.toLowerCase() === keyCompany &&
+      String(item.trade || "").toLowerCase() === keyTrade &&
+      String(item.contact || "").toLowerCase() === keyContact &&
+      String(item.employeeName || "").toLowerCase() === keyEmployee &&
+      String(item.shiftStart || "") === keyStart &&
+      String(item.shiftEnd || "") === keyEnd &&
+      String(item.shiftBreakMinutes || "") === keyBreak
+  );
   if (existing) {
-    existing.count = mode === "set" ? count : existing.count + count;
+    if (mode === "set") {
+      existing.count = payload.count;
+    } else if (!hasExplicitEmployee) {
+      existing.count = existing.count + payload.count;
+    } else {
+      existing.count = 1;
+    }
+    if (payload.contact) existing.contact = payload.contact;
+    if (payload.employeeName) existing.employeeName = payload.employeeName;
   } else {
     entry.companyWorkers.push({
       id: uid(),
-      company,
-      count,
+      company: payload.company,
+      trade: payload.trade,
+      contact: payload.contact,
+      employeeName: payload.employeeName,
+      count: payload.count,
+      shiftStart: payload.shiftStart,
+      shiftEnd: payload.shiftEnd,
+      shiftBreakMinutes: payload.shiftBreakMinutes,
     });
   }
 }
 
-function addCompanyWorker(companyValue = null, countValue = null) {
+function addCompanyWorker(
+  companyValue = null,
+  countValue = null,
+  tradeValue = null,
+  contactValue = null,
+  shiftStartValue = null,
+  shiftEndValue = null,
+  shiftBreakValue = null,
+  employeeNameValue = null
+) {
   const entry = getActiveEntry();
   if (!entry) return false;
 
-  const company = (companyValue || el.companyNameInput.value).trim();
-  const countRaw = countValue ?? el.companyCountInput.value;
-  const count = Number(countRaw);
-  if (!company || !Number.isFinite(count) || count <= 0) return false;
+  const company = String((companyValue ?? el.companyNameInput?.value) || "").trim();
+  const trade = (tradeValue || el.companyTradeInput?.value || "").trim();
+  const contact = (contactValue || el.companyContactInput?.value || "").trim();
+  const employeeName = String((employeeNameValue ?? el.companyEmployeeNameInput?.value) || "").trim();
+  const countRaw = countValue ?? el.companyCountInput?.value ?? "1";
+  const shiftStart = String((shiftStartValue ?? el.companyShiftStartInput?.value) || "").trim();
+  const shiftEnd = String((shiftEndValue ?? el.companyShiftEndInput?.value) || "").trim();
+  const shiftBreakRaw = shiftBreakValue ?? el.companyShiftBreakInput?.value ?? "";
+  const shiftBreakMinutes =
+    String(shiftBreakRaw || "").trim() === "" ? "" : String(normalizeBreakMinutes(shiftBreakRaw));
+  const count = Number.isFinite(Math.round(Number(countRaw))) && Math.round(Number(countRaw)) > 0
+    ? Math.round(Number(countRaw))
+    : 1;
+  if (!company) return false;
+  if (!employeeName) {
+    setManageReportsStatus("Bitte Mitarbeitername eintragen.", "error");
+    return false;
+  }
 
-  upsertCompanyWorker(entry, company, count, "add");
+  upsertCompanyWorker(
+    entry,
+    {
+      company,
+      trade,
+      contact,
+      count,
+      employeeName,
+      shiftStart,
+      shiftEnd,
+      shiftBreakMinutes,
+    },
+    null,
+    "add"
+  );
 
   if (!companyValue) el.companyNameInput.value = "";
-  if (countValue == null) el.companyCountInput.value = "";
+  if (el.companyTradeInput && !tradeValue) el.companyTradeInput.value = "";
+  if (el.companyContactInput && !contactValue) el.companyContactInput.value = "";
+  if (el.companyEmployeeNameInput && employeeNameValue == null) el.companyEmployeeNameInput.value = "";
+  if (el.companyCountInput && countValue == null) el.companyCountInput.value = "";
+  if (el.companyShiftStartInput && shiftStartValue == null) el.companyShiftStartInput.value = "";
+  if (el.companyShiftEndInput && shiftEndValue == null) el.companyShiftEndInput.value = "";
+  if (el.companyShiftBreakInput && shiftBreakValue == null) el.companyShiftBreakInput.value = "";
 
   updateWorkersFromCompanyList(entry);
   renderCompanyWorkers(entry);
+  renderCompanyWorkerSuggestions();
   persist();
   updateStatus("Ungespeichert");
   return true;
@@ -2862,11 +3591,20 @@ function applyCompanyWorkerMentions(entry, hits, sourceText) {
   }
 
   for (const hit of hits) {
-    upsertCompanyWorker(entry, hit.company, hit.count, "set");
+    upsertCompanyWorker(
+      entry,
+      {
+        company: hit.company,
+        count: hit.count,
+      },
+      null,
+      "set"
+    );
   }
 
   updateWorkersFromCompanyList(entry);
   renderCompanyWorkers(entry);
+  renderCompanyWorkerSuggestions();
   const total = entry.companyWorkers.reduce((sum, item) => sum + Number(item.count || 0), 0);
   return { applied: true, total };
 }
@@ -2914,7 +3652,11 @@ async function appendEntryPhotoFiles(files) {
 
   for (const file of files) {
     if (!file.type.startsWith("image/")) continue;
-    const dataUrl = await toOptimizedPhotoDataUrl(file);
+    const dataUrl = await toOptimizedPhotoDataUrl(file, {
+      maxEdge: 1400,
+      jpegQuality: 0.72,
+      reencodeAboveBytes: 350 * 1024,
+    });
     const photoId = uid();
     const ext = getDataUrlFileExtension(dataUrl);
     const targetPath = `${cloud.workspaceKey}/projects/${projectId}/entries/${entryId}/photos/${photoId}.${ext}`;
@@ -2928,6 +3670,8 @@ async function appendEntryPhotoFiles(files) {
       name: file.name,
       dataUrl: "",
       cloudPath,
+      description: "",
+      location: "",
     });
     addedCount += 1;
   }
@@ -2961,7 +3705,11 @@ async function appendPhotoFiles(files) {
 
   for (const file of files) {
     if (!file.type.startsWith("image/")) continue;
-    const dataUrl = await toOptimizedPhotoDataUrl(file);
+    const dataUrl = await toOptimizedPhotoDataUrl(file, {
+      maxEdge: 1800,
+      jpegQuality: 0.8,
+      reencodeAboveBytes: 800 * 1024,
+    });
     const photoId = uid();
     const ext = getDataUrlFileExtension(dataUrl);
     const targetPath = `${cloud.workspaceKey}/projects/${projectId}/folders/${folderId}/${photoId}.${ext}`;
@@ -3011,7 +3759,7 @@ function loadImageFromDataUrl(dataUrl) {
   });
 }
 
-async function toOptimizedPhotoDataUrl(file) {
+async function toOptimizedPhotoDataUrl(file, options = {}) {
   const originalDataUrl = await toDataUrl(file);
   try {
     const image = await loadImageFromDataUrl(originalDataUrl);
@@ -3019,9 +3767,15 @@ async function toOptimizedPhotoDataUrl(file) {
     const height = Number(image.naturalHeight || image.height || 0);
     if (!width || !height) return originalDataUrl;
 
-    const maxEdge = 1800;
+    const maxEdge = Number(options.maxEdge) > 0 ? Number(options.maxEdge) : 1800;
+    const reencodeAboveBytes =
+      Number(options.reencodeAboveBytes) > 0 ? Number(options.reencodeAboveBytes) : 900 * 1024;
+    const jpegQuality =
+      Number(options.jpegQuality) >= 0.4 && Number(options.jpegQuality) <= 0.95
+        ? Number(options.jpegQuality)
+        : 0.82;
     const scale = Math.min(1, maxEdge / Math.max(width, height));
-    const shouldReencode = scale < 1 || Number(file?.size || 0) > 900 * 1024;
+    const shouldReencode = scale < 1 || Number(file?.size || 0) > reencodeAboveBytes;
     if (!shouldReencode) return originalDataUrl;
 
     const canvas = document.createElement("canvas");
@@ -3033,7 +3787,7 @@ async function toOptimizedPhotoDataUrl(file) {
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-    const optimizedDataUrl = canvas.toDataURL("image/jpeg", 0.82);
+    const optimizedDataUrl = canvas.toDataURL("image/jpeg", jpegQuality);
     if (!optimizedDataUrl || optimizedDataUrl.length >= originalDataUrl.length) {
       return originalDataUrl;
     }
@@ -3939,19 +4693,90 @@ function bindEvents() {
     el.deleteDraftReportsBtn.addEventListener("click", deleteDraftReports);
   }
   el.addTodoBtn.addEventListener("click", () => addTodo());
-  el.addCompanyWorkerBtn.addEventListener("click", () => addCompanyWorker());
-  el.companyNameInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      addCompanyWorker();
-    }
-  });
-  el.companyCountInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      addCompanyWorker();
-    }
-  });
+  if (el.addCompanyWorkerBtn) {
+    el.addCompanyWorkerBtn.addEventListener("click", () => addCompanyWorker());
+  }
+  if (el.companyNameInput) {
+    el.companyNameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addCompanyWorker();
+      }
+    });
+  }
+  if (el.companyCountInput) {
+    el.companyCountInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addCompanyWorker();
+      }
+    });
+  }
+  if (el.companyTradeInput) {
+    el.companyTradeInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addCompanyWorker();
+      }
+    });
+  }
+  if (el.companyContactInput) {
+    el.companyContactInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addCompanyWorker();
+      }
+    });
+  }
+  if (el.companyEmployeeNameInput) {
+    el.companyEmployeeNameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addCompanyWorker();
+      }
+    });
+  }
+  if (el.companyShiftStartInput) {
+    el.companyShiftStartInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addCompanyWorker();
+      }
+    });
+  }
+  if (el.companyShiftEndInput) {
+    el.companyShiftEndInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addCompanyWorker();
+      }
+    });
+  }
+  if (el.companyShiftBreakInput) {
+    el.companyShiftBreakInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addCompanyWorker();
+      }
+    });
+  }
+  if (el.addWorkItemBtn) {
+    el.addWorkItemBtn.addEventListener("click", () => addLocationWorkItem());
+  }
+  const workItemInputs = [
+    el.workItemLocationInput,
+    el.workItemDescriptionInput,
+    el.workItemQuantityInput,
+  ];
+  for (const input of workItemInputs) {
+    if (!input) continue;
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addLocationWorkItem();
+      }
+    });
+  }
   el.todoInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -4124,12 +4949,24 @@ function bindEvents() {
     el.entryDate,
     el.weather,
     el.workers,
+    el.workStartTime,
+    el.workEndTime,
+    el.workBreakMinutes,
+    el.workShiftType,
+    el.workLocationDetail,
     el.workDone,
+    el.workQuantities,
     el.issues,
     el.nextSteps,
+    el.materialDeliveries,
+    el.equipmentUsed,
+    el.siteVisitors,
     el.privateNotes,
+    el.signatureSignerName,
+    el.signatureSignerRole,
   ];
   for (const input of entryInputs) {
+    if (!input) continue;
     input.addEventListener("input", pullInputsToActiveEntry);
     input.addEventListener("change", pullInputsToActiveEntry);
   }

@@ -460,7 +460,8 @@ textarea {
 }
 
 .grid-two,
-.grid-three {
+.grid-three,
+.grid-four {
   display: grid;
   gap: 0.65rem;
 }
@@ -471,6 +472,14 @@ textarea {
 
 .grid-three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.grid-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.compact-grid {
+  margin-top: 0.35rem;
 }
 
 .row-between {
@@ -521,7 +530,8 @@ textarea {
 
 .entry-list,
 .todo-list,
-.company-workers-list {
+.company-workers-list,
+.work-items-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -806,10 +816,81 @@ textarea {
   gap: 0.5rem;
 }
 
+.work-items-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 0.9fr) minmax(0, 0.9fr) auto;
+  gap: 0.5rem;
+}
+
+.work-items-list {
+  margin-top: 0.42rem;
+}
+
+.work-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.55rem;
+  margin-top: 0.42rem;
+  border: 1px solid #d4dbe6;
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.45rem 0.52rem;
+}
+
+.work-item-details {
+  min-width: 0;
+}
+
+.work-item-main {
+  margin: 0;
+  color: #203550;
+  font-weight: 700;
+}
+
+.work-item-meta {
+  margin: 0.12rem 0 0;
+  color: #51637c;
+  font-size: 0.79rem;
+  line-height: 1.3;
+}
+
+.work-item-remove {
+  width: 27px;
+  height: 27px;
+  border: 1px solid #ccd5e2;
+  border-radius: 5px;
+  background: #f7f9fc;
+  color: #425972;
+  cursor: pointer;
+}
+
+.work-items-empty {
+  margin: 0;
+  padding: 0.65rem 0.72rem;
+  border: 1px dashed #c6d0de;
+  border-radius: 6px;
+  background: #f8fafd;
+  color: #5c6c81;
+  font-size: 0.9rem;
+}
+
 .company-workers-add {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(110px, 0.5fr) auto;
   gap: 0.5rem;
+}
+
+.company-workers-add-extended {
+  grid-template-columns:
+    minmax(0, 1.15fr)
+    minmax(0, 0.95fr)
+    minmax(0, 0.95fr)
+    minmax(0, 1fr)
+    minmax(90px, 0.42fr)
+    minmax(90px, 0.42fr)
+    minmax(88px, 0.4fr)
+    auto;
 }
 
 .company-workers-list {
@@ -819,7 +900,7 @@ textarea {
 .company-workers-item,
 .todo-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.55rem;
   margin-top: 0.42rem;
@@ -830,13 +911,59 @@ textarea {
 }
 
 .company-workers-company {
+  margin: 0;
   color: #203550;
   font-weight: 700;
 }
 
-.company-workers-count {
-  color: #1f426d;
-  font-weight: 700;
+.company-workers-details {
+  min-width: 0;
+}
+
+.company-workers-meta {
+  margin: 0.12rem 0 0;
+  color: #51637c;
+  font-size: 0.79rem;
+  line-height: 1.3;
+}
+
+.company-workers-members {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.24rem;
+}
+
+.company-workers-member {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.16rem 0.34rem;
+  border: 1px dashed #d9e0eb;
+  border-radius: 5px;
+  background: #f9fbfe;
+}
+
+.company-workers-member-text {
+  min-width: 0;
+  color: #556a83;
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+.company-workers-member-remove {
+  width: 22px;
+  height: 22px;
+  border: 1px solid #d0d8e6;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #4b6078;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .company-workers-remove,
@@ -876,6 +1003,10 @@ textarea {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
   gap: 0.52rem;
+}
+
+#entryPhotoGrid {
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
 }
 
 .photo-folder-controls {
@@ -942,6 +1073,41 @@ textarea {
   background: rgba(14, 24, 37, 0.78);
   color: #fff;
   cursor: pointer;
+}
+
+.entry-photo-card {
+  border: 1px solid #ced8e6;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.entry-photo-card .photo {
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid #d4deeb;
+  border-radius: 0;
+}
+
+.entry-photo-meta {
+  display: grid;
+  gap: 0.34rem;
+  padding: 0.45rem 0.52rem 0.54rem;
+}
+
+.entry-photo-meta input {
+  padding: 0.45rem 0.55rem;
+  font-size: 0.85rem;
+}
+
+.entry-photo-name {
+  margin: 0;
+  font-size: 0.77rem;
+  color: #5b6e86;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .print-signature-grid {
@@ -1039,7 +1205,8 @@ textarea {
   }
 
   .grid-two,
-  .grid-three {
+  .grid-three,
+  .grid-four {
     grid-template-columns: 1fr;
   }
 
@@ -1047,8 +1214,24 @@ textarea {
     grid-template-columns: 1fr 110px;
   }
 
+  .company-workers-add-extended {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .work-items-add {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .company-workers-add #addCompanyWorkerBtn {
     grid-column: 1 / -1;
+  }
+
+  .work-items-add #addWorkItemBtn {
+    grid-column: 1 / -1;
+  }
+
+  #entryPhotoGrid {
+    grid-template-columns: 1fr;
   }
 
   .print-meta-grid {

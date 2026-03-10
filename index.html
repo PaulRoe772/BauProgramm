@@ -254,7 +254,7 @@
               </section>
 
               <section class="report-section report-section-personnel">
-                <p class="section-marker">2. Personal</p>
+                <p class="section-marker">2. Firmen, Gewerke und Personal</p>
                 <div class="grid-two">
                   <div>
                     <label for="workers">Mitarbeiter vor Ort</label>
@@ -262,19 +262,67 @@
                   </div>
                 </div>
 
-                <label>Mitarbeiter nach Unternehmen</label>
-                <div class="company-workers-add">
-                  <input id="companyNameInput" type="text" placeholder="Unternehmen (z. B. Elektro Weber GmbH)" />
-                  <input id="companyCountInput" type="number" min="1" placeholder="Anzahl" />
+                <label>Firmenliste pro Mitarbeiter (Name + Arbeitszeit)</label>
+                <div class="company-workers-add company-workers-add-extended">
+                  <input
+                    id="companyNameInput"
+                    type="text"
+                    list="companyNameSuggestions"
+                    placeholder="Unternehmen (z. B. Elektro Weber GmbH)"
+                  />
+                  <input
+                    id="companyTradeInput"
+                    type="text"
+                    list="companyTradeSuggestions"
+                    placeholder="Gewerk (z. B. Elektro)"
+                  />
+                  <input
+                    id="companyContactInput"
+                    type="text"
+                    list="companyContactSuggestions"
+                    placeholder="Ansprechpartner"
+                  />
+                  <input
+                    id="companyEmployeeNameInput"
+                    type="text"
+                    list="companyEmployeeSuggestions"
+                    placeholder="Mitarbeitername"
+                  />
+                  <input id="companyShiftStartInput" type="time" aria-label="Arbeitsbeginn pro Gewerk" />
+                  <input id="companyShiftEndInput" type="time" aria-label="Arbeitsende pro Gewerk" />
+                  <input
+                    id="companyShiftBreakInput"
+                    type="number"
+                    min="0"
+                    step="5"
+                    placeholder="Pause Min."
+                    aria-label="Pause pro Gewerk"
+                  />
                   <button id="addCompanyWorkerBtn" class="btn btn-ghost" type="button">Hinzufügen</button>
                 </div>
+                <datalist id="companyNameSuggestions"></datalist>
+                <datalist id="companyTradeSuggestions"></datalist>
+                <datalist id="companyContactSuggestions"></datalist>
+                <datalist id="companyEmployeeSuggestions"></datalist>
                 <ul id="companyWorkersList" class="company-workers-list"></ul>
               </section>
 
               <section class="report-section report-section-progress">
-                <p class="section-marker">3. Leistungsstand</p>
-                <label for="workDone">Ausgeführte Arbeiten</label>
-                <textarea id="workDone" rows="4" placeholder="Was wurde heute erledigt?"></textarea>
+                <p class="section-marker">3. Leistungsbeschreibung</p>
+                <label>Leistungspositionen nach Ort (mehrere Einträge)</label>
+                <div class="work-items-add">
+                  <input id="workItemLocationInput" type="text" placeholder="Ort / Bauteil (z. B. 2. OG, Wohnung 8)" />
+                  <input
+                    id="workItemDescriptionInput"
+                    type="text"
+                    placeholder="Leistungsbeschreibung (z. B. Elektroinstallation Leitungen verlegt)"
+                  />
+                  <input id="workItemQuantityInput" type="text" placeholder="Gewerk (optional)" />
+                  <button id="addWorkItemBtn" class="btn btn-ghost" type="button">Position hinzufügen</button>
+                </div>
+                <ul id="workItemsList" class="work-items-list"></ul>
+                <label for="workQuantities">Mengen / Baufortschritt</label>
+                <textarea id="workQuantities" rows="3" placeholder="z. B. Estrich Whg. 29/30: ca. 120 m² eingebracht"></textarea>
 
                 <label for="issues">Störungen / Hindernisse</label>
                 <textarea id="issues" rows="3" placeholder="Lieferverzug, Wetter, Abstimmungen ..."></textarea>
@@ -283,8 +331,32 @@
                 <textarea id="nextSteps" rows="3" placeholder="Was passiert morgen/nächste Woche?"></textarea>
               </section>
 
+              <section class="report-section report-section-logistics">
+                <p class="section-marker">4. Material, Geräte und Besucher</p>
+                <label for="materialDeliveries">Materiallieferungen</label>
+                <textarea
+                  id="materialDeliveries"
+                  rows="3"
+                  placeholder="z. B. 8:10 Uhr, 4 Paletten Trockenbauprofile, Lieferschein 5542"
+                ></textarea>
+
+                <label for="equipmentUsed">Eingesetzte Geräte / Maschinen</label>
+                <textarea
+                  id="equipmentUsed"
+                  rows="3"
+                  placeholder="z. B. Kran, Estrichpumpe, Hubsteiger"
+                ></textarea>
+
+                <label for="siteVisitors">Baustellenbesucher</label>
+                <textarea
+                  id="siteVisitors"
+                  rows="3"
+                  placeholder="Name, Funktion, Firma/Behörde, Uhrzeit"
+                ></textarea>
+              </section>
+
               <section class="report-section report-section-todos">
-                <p class="section-marker">4. Offene Punkte</p>
+                <p class="section-marker">5. Offene Punkte</p>
                 <label for="todoInput">Offene Punkte</label>
                 <div class="todo-add">
                   <input id="todoInput" type="text" placeholder="z. B. Materialfreigabe EG" />
@@ -294,7 +366,7 @@
               </section>
 
               <section class="report-section report-section-photos">
-                <p class="section-marker">5. Fotoanhang</p>
+                <p class="section-marker">6. Fotoanhang</p>
                 <label for="entryPhotoInput">Fotos (werden lokal im Bericht gespeichert)</label>
                 <input id="entryPhotoInput" type="file" accept="image/*" multiple />
                 <div class="mobile-photo-actions">
@@ -306,13 +378,23 @@
               </section>
 
               <section class="report-section report-section-signature">
-                <p class="section-marker">6. Digitale Unterschrift</p>
+                <p class="section-marker">7. Digitale Unterschrift</p>
                 <label for="signatureCanvas">Unterschrift (Finger/Stift auf dem Handy)</label>
                 <div class="signature-pad">
                   <canvas id="signatureCanvas" class="signature-canvas" height="190"></canvas>
                   <div class="signature-pad-actions">
                     <button id="clearSignatureBtn" class="btn btn-ghost" type="button">Unterschrift löschen</button>
                     <span class="subtle mini">Die Unterschrift wird pro Tagesbericht gespeichert.</span>
+                  </div>
+                </div>
+                <div class="grid-two">
+                  <div>
+                    <label for="signatureSignerName">Name Unterzeichner</label>
+                    <input id="signatureSignerName" type="text" placeholder="Vor- und Nachname" />
+                  </div>
+                  <div>
+                    <label for="signatureSignerRole">Funktion</label>
+                    <input id="signatureSignerRole" type="text" placeholder="z. B. Bauleitung" />
                   </div>
                 </div>
 
@@ -336,7 +418,7 @@
                 </div>
               </section>
 
-              <p class="section-marker actions-marker">7. Aktionen</p>
+              <p class="section-marker actions-marker">8. Aktionen</p>
               <div class="actions">
                 <button id="saveEntryBtn" class="btn btn-primary">Bericht speichern</button>
                 <button id="printBtn" class="btn btn-ghost">Drucken / PDF</button>
