@@ -78,6 +78,7 @@ const el = {
   printGeneratedAt: document.getElementById("printGeneratedAt"),
   printReport: document.getElementById("printReport"),
   entryDate: document.getElementById("entryDate"),
+  entryCreatedAt: document.getElementById("entryCreatedAt"),
   weather: document.getElementById("weather"),
   workers: document.getElementById("workers"),
   companyNameInput: document.getElementById("companyNameInput"),
@@ -102,6 +103,8 @@ const el = {
   workItemLocationInput: document.getElementById("workItemLocationInput"),
   workItemDescriptionInput: document.getElementById("workItemDescriptionInput"),
   workItemQuantityInput: document.getElementById("workItemQuantityInput"),
+  workItemLocationSuggestions: document.getElementById("workItemLocationSuggestions"),
+  workItemTradeSuggestions: document.getElementById("workItemTradeSuggestions"),
   addWorkItemBtn: document.getElementById("addWorkItemBtn"),
   workItemsList: document.getElementById("workItemsList"),
   workDone: document.getElementById("workDone"),
@@ -1126,6 +1129,7 @@ function emptyEntry() {
   return {
     id: uid(),
     date: new Date().toISOString().slice(0, 10),
+    createdAt: new Date().toISOString(),
     weather: "",
     workers: "",
     companyWorkers: [],
@@ -1292,6 +1296,7 @@ function normalizeEntry(source = {}) {
       ? source.companyWorkers.map((item) => normalizeCompanyWorkerItem(item)).filter(Boolean)
       : [],
     weather: String(source?.weather || "").replace(/^Bewoelkt$/i, "Bewölkt"),
+    createdAt: String(source?.createdAt || source?.generatedAt || source?.savedAt || new Date().toISOString()),
     privateNotes: String(source?.privateNotes || ""),
     workStartTime: String(source?.workStartTime || source?.workStart || ""),
     workEndTime: String(source?.workEndTime || source?.workEnd || ""),
@@ -1520,6 +1525,7 @@ function syncEntryInputs() {
   if (!entry) return;
 
   el.entryDate.value = entry.date || "";
+  if (el.entryCreatedAt) el.entryCreatedAt.value = toDateTimeLocalInputValue(resolveEntryCreatedAt(entry));
   el.weather.value = entry.weather || "";
   el.workers.value = entry.workers || "";
   renderCompanyWorkers(entry);
@@ -1530,6 +1536,7 @@ function syncEntryInputs() {
   if (el.workShiftType) el.workShiftType.value = entry.workShiftType || "";
   if (el.workLocationDetail) el.workLocationDetail.value = entry.workLocationDetail || "";
   renderLocationWorkItems(entry);
+  renderLocationWorkItemSuggestions();
   if (el.workDone) el.workDone.value = entry.workDone || "";
   if (el.workQuantities) el.workQuantities.value = entry.workQuantities || "";
   el.issues.value = entry.issues || "";
@@ -1556,6 +1563,10 @@ function pullInputsToActiveEntry() {
   if (!entry) return;
 
   entry.date = el.entryDate.value;
+  if (el.entryCreatedAt) {
+    const createdAtFromInput = fromDateTimeLocalInputValue(el.entryCreatedAt.value);
+    entry.createdAt = createdAtFromInput || resolveEntryCreatedAt(entry) || new Date().toISOString();
+  }
   entry.weather = el.weather.value;
   entry.workers = el.workers.value;
   if (el.workStartTime) entry.workStartTime = el.workStartTime.value;
@@ -1816,6 +1827,7 @@ function renderLocationWorkItems(entry) {
     removeButton.addEventListener("click", () => {
       entry.locationWorkItems = entry.locationWorkItems.filter((x) => x.id !== item.id);
       renderLocationWorkItems(entry);
+      renderLocationWorkItemSuggestions();
       persist();
       updateStatus("Ungespeichert");
     });
@@ -1856,6 +1868,7 @@ function addLocationWorkItem(
   if (quantityValue == null && el.workItemQuantityInput) el.workItemQuantityInput.value = "";
 
   renderLocationWorkItems(entry);
+  renderLocationWorkItemSuggestions();
   persist();
   updateStatus("Ungespeichert");
   setManageReportsStatus("Leistungsposition hinzugefügt.", "success");
@@ -1905,6 +1918,35 @@ function renderSuggestionDatalist(node, values = []) {
     option.value = value;
     node.appendChild(option);
   }
+}
+
+function collectLocationWorkItemSuggestions() {
+  const locations = new Set();
+  const trades = new Set();
+
+  for (const project of state.projects) {
+    const entries = Array.isArray(project?.entries) ? project.entries : [];
+    for (const entry of entries) {
+      const items = Array.isArray(entry?.locationWorkItems) ? entry.locationWorkItems : [];
+      for (const item of items) {
+        const location = String(item?.location || "").trim();
+        const trade = String(item?.quantity || "").trim();
+        if (location) locations.add(location);
+        if (trade) trades.add(trade);
+      }
+    }
+  }
+
+  return {
+    locations: toSortedSuggestionValues(locations),
+    trades: toSortedSuggestionValues(trades),
+  };
+}
+
+function renderLocationWorkItemSuggestions() {
+  const pool = collectLocationWorkItemSuggestions();
+  renderSuggestionDatalist(el.workItemLocationSuggestions, pool.locations);
+  renderSuggestionDatalist(el.workItemTradeSuggestions, pool.trades);
 }
 
 function renderCompanyWorkerSuggestions() {
@@ -2904,6 +2946,33 @@ function fmt(isoString, withTime = false) {
   return date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 }
 
+function toDateTimeLocalInputValue(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function fromDateTimeLocalInputValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString();
+}
+
+function resolveEntryCreatedAt(entry = null) {
+  const explicit = String(entry?.createdAt || "").trim();
+  if (explicit) return explicit;
+  const fallbackSavedAt = String(entry?.savedAt || "").trim();
+  if (fallbackSavedAt) return fallbackSavedAt;
+  return "";
+}
+
 function fmtEntryDate(dateValue) {
   if (!dateValue) return "";
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue);
@@ -2911,44 +2980,6 @@ function fmtEntryDate(dateValue) {
   const date = new Date(dateValue);
   if (Number.isNaN(date.getTime())) return dateValue;
   return date.toLocaleDateString("de-DE");
-}
-
-function getReportTimelinessInfo(entry) {
-  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(entry?.date || ""));
-  if (!dateMatch) {
-    return {
-      label: "Nicht bewertbar",
-      delayDays: null,
-    };
-  }
-
-  const reportDay = Date.UTC(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]));
-  const ref = entry?.savedAt ? new Date(entry.savedAt) : new Date();
-  if (Number.isNaN(ref.getTime())) {
-    return {
-      label: "Nicht bewertbar",
-      delayDays: null,
-    };
-  }
-
-  const refDay = Date.UTC(ref.getFullYear(), ref.getMonth(), ref.getDate());
-  const delayDays = Math.max(0, Math.floor((refDay - reportDay) / 86400000));
-  if (delayDays === 0) {
-    return {
-      label: "Tagesgleich erstellt",
-      delayDays,
-    };
-  }
-  if (delayDays === 1) {
-    return {
-      label: "Am Folgetag erstellt",
-      delayDays,
-    };
-  }
-  return {
-    label: `Verspätet erstellt (${delayDays} Tage)`,
-    delayDays,
-  };
 }
 
 function setText(node, value, fallback = "-") {
@@ -2969,8 +3000,9 @@ function updatePrintMeta() {
   setText(el.printSiteManager, siteManager);
   setText(el.printEntryDate, entry ? fmtEntryDate(entry.date) : "");
   setText(el.printWeather, entry ? entry.weather : "");
-  const createdAtLabel = entry?.savedAt
-    ? fmt(entry.savedAt)
+  const createdAtSource = resolveEntryCreatedAt(entry);
+  const createdAtLabel = createdAtSource
+    ? fmt(createdAtSource)
     : new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
   setText(
     el.printGeneratedAt,
@@ -3102,8 +3134,8 @@ function preparePrintReport() {
   const projectNumber = el.projectNumber ? el.projectNumber.value.trim() : project.number || "";
   const siteManager = el.siteManager ? el.siteManager.value.trim() : project.manager || "";
   const generatedAt = new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
-  const savedAtLabel = entry.savedAt ? fmt(entry.savedAt) : generatedAt;
-  const timelinessInfo = getReportTimelinessInfo(entry);
+  const createdAtSource = resolveEntryCreatedAt(entry);
+  const savedAtLabel = createdAtSource ? fmt(createdAtSource) : generatedAt;
   const photos = Array.isArray(entry.photos)
     ? entry.photos
         .map((photo) => ({
@@ -3129,7 +3161,6 @@ function preparePrintReport() {
   general.appendChild(createPrintField("Datum", fmtEntryDate(entry.date)));
   general.appendChild(createPrintField("Wetter", entry.weather));
   general.appendChild(createPrintField("Bericht erstellt am", savedAtLabel));
-  general.appendChild(createPrintField("Friststatus", timelinessInfo.label));
   page.appendChild(general);
 
   const personnel = createPrintSection("2. Firmen, Gewerke und Personal");
@@ -3322,18 +3353,10 @@ function saveEntry() {
   const entry = getActiveEntry();
   if (!entry) return;
   entry.savedAt = new Date().toISOString();
-  const timelinessInfo = getReportTimelinessInfo(entry);
   persist();
   renderEntries();
   syncEntryInputs();
-  if (timelinessInfo.delayDays != null && timelinessInfo.delayDays > 1) {
-    setManageReportsStatus(
-      `Bericht gespeichert. Hinweis: ${timelinessInfo.label}. Bitte künftig tagesgleich oder spätestens am Folgetag erfassen.`,
-      "error"
-    );
-  } else {
-    setManageReportsStatus(`Bericht gespeichert (${timelinessInfo.label}).`, "success");
-  }
+  setManageReportsStatus("Bericht gespeichert.", "success");
 }
 
 function deleteEntry() {
@@ -4947,6 +4970,7 @@ function bindEvents() {
 
   const entryInputs = [
     el.entryDate,
+    el.entryCreatedAt,
     el.weather,
     el.workers,
     el.workStartTime,

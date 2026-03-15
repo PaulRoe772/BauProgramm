@@ -240,6 +240,10 @@
                     <input id="entryDate" type="date" />
                   </div>
                   <div>
+                    <label for="entryCreatedAt">Erstellungsdatum</label>
+                    <input id="entryCreatedAt" type="datetime-local" />
+                  </div>
+                  <div>
                     <label for="weather">Wetter</label>
                     <select id="weather">
                       <option value="">Bitte wählen</option>
@@ -311,15 +315,22 @@
                 <p class="section-marker">3. Leistungsbeschreibung</p>
                 <label>Leistungspositionen nach Ort (mehrere Einträge)</label>
                 <div class="work-items-add">
-                  <input id="workItemLocationInput" type="text" placeholder="Ort / Bauteil (z. B. 2. OG, Wohnung 8)" />
+                  <input
+                    id="workItemLocationInput"
+                    type="text"
+                    list="workItemLocationSuggestions"
+                    placeholder="Ort / Bauteil (z. B. 2. OG, Wohnung 8)"
+                  />
                   <input
                     id="workItemDescriptionInput"
                     type="text"
                     placeholder="Leistungsbeschreibung (z. B. Elektroinstallation Leitungen verlegt)"
                   />
-                  <input id="workItemQuantityInput" type="text" placeholder="Gewerk (optional)" />
+                  <input id="workItemQuantityInput" type="text" list="workItemTradeSuggestions" placeholder="Gewerk (optional)" />
                   <button id="addWorkItemBtn" class="btn btn-ghost" type="button">Position hinzufügen</button>
                 </div>
+                <datalist id="workItemLocationSuggestions"></datalist>
+                <datalist id="workItemTradeSuggestions"></datalist>
                 <ul id="workItemsList" class="work-items-list"></ul>
                 <label for="workQuantities">Mengen / Baufortschritt</label>
                 <textarea id="workQuantities" rows="3" placeholder="z. B. Estrich Whg. 29/30: ca. 120 m² eingebracht"></textarea>
