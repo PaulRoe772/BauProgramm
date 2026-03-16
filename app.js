@@ -167,6 +167,11 @@ const signaturePad = {
   resizeTimer: null,
 };
 
+const printReportCache = {
+  optimizedPhotos: null,
+  preparedForEntryId: "",
+};
+
 const cloud = {
   client: null,
   url: "",
@@ -3137,7 +3142,35 @@ function createPrintSection(title) {
   return section;
 }
 
-function preparePrintReport() {
+function getEntryResolvedPhotos(entry) {
+  return Array.isArray(entry?.photos)
+    ? entry.photos
+        .map((photo) => ({
+          ...photo,
+          source: resolvePhotoSource(photo),
+        }))
+        .filter((photo) => photo.source)
+    : [];
+}
+
+async function preparePrintReportForPrint() {
+  pullInputsToActiveEntry();
+  updatePrintMeta();
+  const entry = getActiveEntry();
+  if (!entry) {
+    printReportCache.optimizedPhotos = null;
+    printReportCache.preparedForEntryId = "";
+    preparePrintReport();
+    return;
+  }
+  const rawPhotos = getEntryResolvedPhotos(entry);
+  const optimizedPhotos = await buildOptimizedPrintPhotos(rawPhotos);
+  printReportCache.optimizedPhotos = optimizedPhotos;
+  printReportCache.preparedForEntryId = entry.id;
+  preparePrintReport(optimizedPhotos);
+}
+
+function preparePrintReport(photoOverride = null) {
   if (!el.printReport) return;
   const project = ensureActiveProjectId();
   const entry = getActiveEntry();
@@ -3150,14 +3183,7 @@ function preparePrintReport() {
   const generatedAt = new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
   const createdAtSource = resolveEntryCreatedAt(entry);
   const savedAtLabel = createdAtSource ? fmt(createdAtSource) : generatedAt;
-  const allPhotos = Array.isArray(entry.photos)
-    ? entry.photos
-        .map((photo) => ({
-          ...photo,
-          source: resolvePhotoSource(photo),
-        }))
-        .filter((photo) => photo.source)
-    : [];
+  const allPhotos = Array.isArray(photoOverride) ? photoOverride : getEntryResolvedPhotos(entry);
   const photos = allPhotos.slice(0, ENTRY_REPORT_MAX_PHOTOS);
 
   const fragment = document.createDocumentFragment();
@@ -3818,19 +3844,22 @@ function toDataUrl(file) {
   });
 }
 
-function loadImageFromDataUrl(dataUrl) {
+function loadImageFromSource(source, crossOrigin = null) {
   return new Promise((resolve, reject) => {
     const image = new Image();
+    if (crossOrigin) {
+      image.crossOrigin = crossOrigin;
+    }
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error("Bild konnte nicht gelesen werden."));
-    image.src = dataUrl;
+    image.src = source;
   });
 }
 
 async function toOptimizedPhotoDataUrl(file, options = {}) {
   const originalDataUrl = await toDataUrl(file);
   try {
-    const image = await loadImageFromDataUrl(originalDataUrl);
+    const image = await loadImageFromSource(originalDataUrl);
     const width = Number(image.naturalWidth || image.width || 0);
     const height = Number(image.naturalHeight || image.height || 0);
     if (!width || !height) return originalDataUrl;
@@ -3888,6 +3917,80 @@ function estimateDataUrlBytes(dataUrl) {
   if (commaIndex < 0) return value.length;
   const base64 = value.slice(commaIndex + 1);
   return Math.floor((base64.length * 3) / 4);
+}
+
+async function toOptimizedPrintPhotoSource(source, options = {}) {
+  const sourceValue = String(source || "").trim();
+  if (!sourceValue) return "";
+  try {
+    const image = await loadImageFromSource(sourceValue, /^https?:\/\//i.test(sourceValue) ? "anonymous" : null);
+    const width = Number(image.naturalWidth || image.width || 0);
+    const height = Number(image.naturalHeight || image.height || 0);
+    if (!width || !height) return sourceValue;
+
+    const maxEdge = Number(options.maxEdge) > 0 ? Number(options.maxEdge) : 860;
+    const targetMaxBytes = Number(options.targetMaxBytes) > 0 ? Number(options.targetMaxBytes) : 90 * 1024;
+    let quality =
+      Number(options.jpegQuality) >= 0.2 && Number(options.jpegQuality) <= 0.92
+        ? Number(options.jpegQuality)
+        : 0.42;
+    const minQuality =
+      Number(options.minQuality) >= 0.18 && Number(options.minQuality) <= 0.8
+        ? Number(options.minQuality)
+        : 0.24;
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return sourceValue;
+
+    let scale = Math.min(1, maxEdge / Math.max(width, height));
+    let optimizedDataUrl = "";
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      try {
+        optimizedDataUrl = canvas.toDataURL("image/jpeg", quality);
+      } catch (_) {
+        return sourceValue;
+      }
+      if (!optimizedDataUrl) break;
+      const currentBytes = estimateDataUrlBytes(optimizedDataUrl);
+      if (currentBytes <= targetMaxBytes) break;
+      if (quality > minQuality + 0.02) {
+        quality = Math.max(minQuality, quality - 0.06);
+      } else {
+        scale = Math.max(0.2, scale * 0.82);
+      }
+    }
+
+    return optimizedDataUrl || sourceValue;
+  } catch (_) {
+    return sourceValue;
+  }
+}
+
+async function buildOptimizedPrintPhotos(rawPhotos = []) {
+  const photos = Array.isArray(rawPhotos) ? rawPhotos.slice(0, ENTRY_REPORT_MAX_PHOTOS) : [];
+  const optimized = [];
+  for (const photo of photos) {
+    const source = String(photo?.source || "").trim();
+    if (!source) continue;
+    const optimizedSource = await toOptimizedPrintPhotoSource(source, {
+      maxEdge: 860,
+      targetMaxBytes: 90 * 1024,
+      jpegQuality: 0.42,
+      minQuality: 0.24,
+    });
+    optimized.push({
+      ...photo,
+      source: optimizedSource || source,
+    });
+  }
+  return optimized;
 }
 
 async function tryUploadPhotoDataUrl(dataUrl, path) {
@@ -4944,10 +5047,8 @@ function bindEvents() {
     });
   }
   el.exportBtn.addEventListener("click", exportJson);
-  el.printBtn.addEventListener("click", () => {
-    pullInputsToActiveEntry();
-    updatePrintMeta();
-    preparePrintReport();
+  el.printBtn.addEventListener("click", async () => {
+    await preparePrintReportForPrint();
     window.print();
   });
   if (el.clearSignatureBtn) {
@@ -4966,7 +5067,16 @@ function bindEvents() {
   window.addEventListener("beforeprint", () => {
     pullInputsToActiveEntry();
     updatePrintMeta();
-    preparePrintReport();
+    const entry = getActiveEntry();
+    const hasPreparedPhotos =
+      Boolean(entry?.id) &&
+      printReportCache.preparedForEntryId === entry.id &&
+      Array.isArray(printReportCache.optimizedPhotos);
+    preparePrintReport(hasPreparedPhotos ? printReportCache.optimizedPhotos : null);
+  });
+  window.addEventListener("afterprint", () => {
+    printReportCache.optimizedPhotos = null;
+    printReportCache.preparedForEntryId = "";
   });
   window.addEventListener("resize", onSignatureCanvasResize);
 
