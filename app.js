@@ -5,6 +5,7 @@ const CLOUD_TABLE = "app_state";
 const CLOUD_STORAGE_BUCKET = "bau-files";
 const DEFAULT_PHOTO_FOLDER_ID = "folder-default";
 const DEFAULT_PHOTO_FOLDER_NAME = "Allgemein";
+const ENTRY_REPORT_MAX_PHOTOS = 6;
 const state = {
   projects: [],
   activeProjectId: "",
@@ -3149,7 +3150,7 @@ function preparePrintReport() {
   const generatedAt = new Date().toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
   const createdAtSource = resolveEntryCreatedAt(entry);
   const savedAtLabel = createdAtSource ? fmt(createdAtSource) : generatedAt;
-  const photos = Array.isArray(entry.photos)
+  const allPhotos = Array.isArray(entry.photos)
     ? entry.photos
         .map((photo) => ({
           ...photo,
@@ -3157,6 +3158,7 @@ function preparePrintReport() {
         }))
         .filter((photo) => photo.source)
     : [];
+  const photos = allPhotos.slice(0, ENTRY_REPORT_MAX_PHOTOS);
 
   const fragment = document.createDocumentFragment();
   const page = createPrintPage("Baustellentagebuch - Tagesbericht", "Formeller Baustellenbericht");
@@ -3219,6 +3221,14 @@ function preparePrintReport() {
   if (!photos.length) {
     photoSection.appendChild(createPrintField("Fotos", "Keine Fotos hinterlegt"));
   } else {
+    if (allPhotos.length > ENTRY_REPORT_MAX_PHOTOS) {
+      photoSection.appendChild(
+        createPrintField(
+          "Hinweis",
+          `Für den Bericht werden maximal ${ENTRY_REPORT_MAX_PHOTOS} Fotos gedruckt.`
+        )
+      );
+    }
     const grid = document.createElement("div");
     grid.className = "print-photo-grid";
     for (let photoIndex = 0; photoIndex < photos.length; photoIndex += 1) {
@@ -3681,17 +3691,31 @@ async function appendEntryPhotoFiles(files) {
   const entry = getActiveEntry();
   if (!entry) return;
   if (!Array.isArray(entry.photos)) entry.photos = [];
+  const availableSlots = Math.max(0, ENTRY_REPORT_MAX_PHOTOS - entry.photos.length);
+  if (availableSlots <= 0) {
+    setCloudStatus(`Maximal ${ENTRY_REPORT_MAX_PHOTOS} Fotos pro Bautagebuch erlaubt.`, "error");
+    return;
+  }
   const projectId = sanitizeStorageSegment(project.id, "project");
   const entryId = sanitizeStorageSegment(entry.id, "entry");
   let addedCount = 0;
   let failedCount = 0;
+  let skippedCount = 0;
+  let processedImages = 0;
 
   for (const file of files) {
     if (!file.type.startsWith("image/")) continue;
+    if (processedImages >= availableSlots) {
+      skippedCount += 1;
+      continue;
+    }
+    processedImages += 1;
     const dataUrl = await toOptimizedPhotoDataUrl(file, {
-      maxEdge: 1400,
-      jpegQuality: 0.72,
-      reencodeAboveBytes: 350 * 1024,
+      maxEdge: 900,
+      jpegQuality: 0.5,
+      minQuality: 0.32,
+      targetMaxBytes: 120 * 1024,
+      reencodeAboveBytes: 90 * 1024,
     });
     const photoId = uid();
     const ext = getDataUrlFileExtension(dataUrl);
@@ -3722,6 +3746,12 @@ async function appendEntryPhotoFiles(files) {
   } else if (addedCount > 0) {
     setCloudStatus(`${addedCount} Foto(s) in der Cloud gespeichert.`, "success");
   }
+  if (skippedCount > 0) {
+    setCloudStatus(
+      `Nur ${ENTRY_REPORT_MAX_PHOTOS} Fotos pro Bautagebuch erlaubt. ${skippedCount} Datei(en) wurden nicht übernommen.`,
+      "error"
+    );
+  }
 }
 
 async function appendPhotoFiles(files) {
@@ -3742,9 +3772,11 @@ async function appendPhotoFiles(files) {
   for (const file of files) {
     if (!file.type.startsWith("image/")) continue;
     const dataUrl = await toOptimizedPhotoDataUrl(file, {
-      maxEdge: 1800,
-      jpegQuality: 0.8,
-      reencodeAboveBytes: 800 * 1024,
+      maxEdge: 1280,
+      jpegQuality: 0.62,
+      minQuality: 0.42,
+      targetMaxBytes: 320 * 1024,
+      reencodeAboveBytes: 280 * 1024,
     });
     const photoId = uid();
     const ext = getDataUrlFileExtension(dataUrl);
@@ -3803,34 +3835,59 @@ async function toOptimizedPhotoDataUrl(file, options = {}) {
     const height = Number(image.naturalHeight || image.height || 0);
     if (!width || !height) return originalDataUrl;
 
-    const maxEdge = Number(options.maxEdge) > 0 ? Number(options.maxEdge) : 1800;
+    const maxEdge = Number(options.maxEdge) > 0 ? Number(options.maxEdge) : 1280;
     const reencodeAboveBytes =
-      Number(options.reencodeAboveBytes) > 0 ? Number(options.reencodeAboveBytes) : 900 * 1024;
+      Number(options.reencodeAboveBytes) > 0 ? Number(options.reencodeAboveBytes) : 300 * 1024;
+    const targetMaxBytes = Number(options.targetMaxBytes) > 0 ? Number(options.targetMaxBytes) : 320 * 1024;
     const jpegQuality =
       Number(options.jpegQuality) >= 0.4 && Number(options.jpegQuality) <= 0.95
         ? Number(options.jpegQuality)
-        : 0.82;
-    const scale = Math.min(1, maxEdge / Math.max(width, height));
+        : 0.62;
+    const minQuality =
+      Number(options.minQuality) >= 0.25 && Number(options.minQuality) <= 0.9
+        ? Number(options.minQuality)
+        : 0.42;
+    let scale = Math.min(1, maxEdge / Math.max(width, height));
     const shouldReencode = scale < 1 || Number(file?.size || 0) > reencodeAboveBytes;
     if (!shouldReencode) return originalDataUrl;
 
     const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(width * scale));
-    canvas.height = Math.max(1, Math.round(height * scale));
     const ctx = canvas.getContext("2d");
     if (!ctx) return originalDataUrl;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    let quality = jpegQuality;
+    let optimizedDataUrl = "";
 
-    const optimizedDataUrl = canvas.toDataURL("image/jpeg", jpegQuality);
-    if (!optimizedDataUrl || optimizedDataUrl.length >= originalDataUrl.length) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      optimizedDataUrl = canvas.toDataURL("image/jpeg", quality);
+      const currentBytes = estimateDataUrlBytes(optimizedDataUrl);
+      if (currentBytes <= targetMaxBytes) break;
+      if (quality > minQuality + 0.02) {
+        quality = Math.max(minQuality, quality - 0.07);
+      } else {
+        scale = Math.max(0.25, scale * 0.85);
+      }
+    }
+
+    if (!optimizedDataUrl || estimateDataUrlBytes(optimizedDataUrl) >= estimateDataUrlBytes(originalDataUrl)) {
       return originalDataUrl;
     }
     return optimizedDataUrl;
   } catch (_) {
     return originalDataUrl;
   }
+}
+
+function estimateDataUrlBytes(dataUrl) {
+  const value = String(dataUrl || "");
+  const commaIndex = value.indexOf(",");
+  if (commaIndex < 0) return value.length;
+  const base64 = value.slice(commaIndex + 1);
+  return Math.floor((base64.length * 3) / 4);
 }
 
 async function tryUploadPhotoDataUrl(dataUrl, path) {
