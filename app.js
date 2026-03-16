@@ -159,6 +159,8 @@ const signaturePad = {
   drawing: false,
   pointerId: null,
   lastPoint: null,
+  entryId: null,
+  lastPersistAt: 0,
   hasInk: false,
   renderToken: 0,
   resizeTimer: null,
@@ -1495,6 +1497,17 @@ function getActiveEntry() {
   const project = ensureActiveProjectId();
   if (!project) return null;
   return project.entries.find((entry) => entry.id === project.activeEntryId) || null;
+}
+
+function findEntryById(entryId) {
+  const targetId = String(entryId || "").trim();
+  if (!targetId) return null;
+  for (const project of state.projects) {
+    const entries = Array.isArray(project?.entries) ? project.entries : [];
+    const match = entries.find((entry) => entry.id === targetId);
+    if (match) return match;
+  }
+  return null;
 }
 
 function syncProjectInputs() {
@@ -3913,11 +3926,15 @@ function drawSignatureDot(x, y) {
 }
 
 function startSignatureStroke(clientX, clientY) {
+  const entry = getActiveEntry();
+  if (!entry) return;
   const point = getCanvasPointFromClient(clientX, clientY);
+  signaturePad.entryId = entry.id;
   signaturePad.drawing = true;
   signaturePad.lastPoint = point;
   signaturePad.hasInk = true;
   drawSignatureDot(point.x, point.y);
+  persistSignatureToEntry(entry.id);
 }
 
 function moveSignatureStroke(clientX, clientY) {
@@ -3931,32 +3948,43 @@ function moveSignatureStroke(clientX, clientY) {
   ctx.lineTo(point.x, point.y);
   ctx.stroke();
   signaturePad.lastPoint = point;
+  const now = Date.now();
+  if (now - signaturePad.lastPersistAt >= 300) {
+    persistSignatureToEntry(signaturePad.entryId);
+  }
 }
 
-function persistSignatureToEntry() {
-  const entry = getActiveEntry();
+function persistSignatureToEntry(entryId = null) {
+  const activeEntry = getActiveEntry();
+  const entry = entryId ? findEntryById(entryId) : activeEntry;
   const canvas = el.signatureCanvas;
   if (!entry || !canvas) return;
   entry.signatureDataUrl = signaturePad.hasInk ? canvas.toDataURL("image/png") : "";
   entry.signatureCloudPath = "";
+  signaturePad.lastPersistAt = Date.now();
   persist();
-  updateStatus("Ungespeichert");
+  if (activeEntry?.id === entry.id) {
+    updateStatus("Ungespeichert");
+  }
 }
 
 function endSignatureStroke() {
   if (!signaturePad.drawing) return;
   signaturePad.drawing = false;
   signaturePad.lastPoint = null;
-  persistSignatureToEntry();
+  persistSignatureToEntry(signaturePad.entryId);
+  signaturePad.entryId = null;
 }
 
 function clearSignature() {
+  const entryId = getActiveEntry()?.id || signaturePad.entryId || null;
   signaturePad.drawing = false;
   signaturePad.pointerId = null;
   signaturePad.lastPoint = null;
+  signaturePad.entryId = null;
   signaturePad.hasInk = false;
   clearSignatureSurface();
-  persistSignatureToEntry();
+  persistSignatureToEntry(entryId);
 }
 
 function onSignatureCanvasResize() {
@@ -3964,6 +3992,9 @@ function onSignatureCanvasResize() {
     window.clearTimeout(signaturePad.resizeTimer);
   }
   signaturePad.resizeTimer = window.setTimeout(() => {
+    if (signaturePad.hasInk) {
+      persistSignatureToEntry(signaturePad.entryId);
+    }
     const entry = getActiveEntry();
     renderSignature(entry ? getEntrySignatureSource(entry) : "");
   }, 120);
@@ -4901,6 +4932,7 @@ function bindEvents() {
       });
 
       const endPointer = (event) => {
+        if (signaturePad.pointerId == null && !signaturePad.drawing) return;
         if (signaturePad.pointerId != null && event.pointerId !== signaturePad.pointerId) return;
         if (canvas.releasePointerCapture) {
           try {
@@ -4915,6 +4947,8 @@ function bindEvents() {
 
       canvas.addEventListener("pointerup", endPointer);
       canvas.addEventListener("pointercancel", endPointer);
+      window.addEventListener("pointerup", endPointer);
+      window.addEventListener("pointercancel", endPointer);
     } else {
       canvas.addEventListener("mousedown", (event) => {
         event.preventDefault();
@@ -4965,6 +4999,8 @@ function bindEvents() {
         },
         { passive: false }
       );
+      window.addEventListener("touchend", () => endSignatureStroke(), { passive: true });
+      window.addEventListener("touchcancel", () => endSignatureStroke(), { passive: true });
     }
   }
 
